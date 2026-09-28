@@ -1,0 +1,532 @@
+{
+  "document": {
+    "type": "NF-e"
+  },
+  "sections": [
+    {
+      "type": "table",
+      "rows": [
+        [
+          "RECEBEMOS DE Super Office Comercio Dist. Moveis e Artigos Escritorio LTDA OS PRODUTOS CONSTANTES DA NOTA FISCAL INDICADA AO LADO",
+          "",
+          "",
+          "",
+          "NF-e Nº 175894 Série 1",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "Data de recebimento",
+          "",
+          "Identificaçao e assinatura do recebedor",
+          "DANFE Documento Auxiliar da Nota Fiscal Eletronica 0- Entrada 1 1-Saida N 175894 S ERIE:1 Página: 1 de 1",
+          "",
+          ""
+        ],
+        [
+          "Super Office Comercio Dist. Moveis e Artigos Escritorio LTDA COMFY Av.Santa Terezinha,1400, Gaspar Mirim,Gaspar-SC - 89.112-786 Fone (11) 3090-7879 www.comfy.com.br atendimento@comfy.com.br",
+          "",
+          "Controle do Fisco 2251015539610000135550010001758941003668842",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "Chave de acesso 4225 1015 5396 10000135 55001000175894100366 8842",
+          "",
+          "",
+          ""
+        ],
+        [
+          "Consulta de autenticidade no portalnacionaldaNF-e www.nfe.fazenda.gov.br/portal ou no site da S efaz autorizadora",
+          "",
+          "Natureza da operagao Venda de merc adorias destinadas a nao contribuinte",
+          "",
+          "",
+          "Número de protocolo de autorizacao de uso da NF-e 242250401516652",
+          "Inscriçao Estadual 256720347",
+          "",
+          "",
+          "Inscr.est. do subst.trib. 169040666",
+          "",
+          "",
+          "CNPJ 15.539.610/0001-35",
+          "",
+          "",
+          "",
+          ""
+        ],
+        [
+          "Destinatário/Re mete nte",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        [
+          "Nome / Razão Social Beatriz Almeida",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        [
+          "Endereço Rua Professor Joaquim Francisco Veloso Galvao, 1549 -Apt 302",
+          "",
+          "",
+          "",
+          "Bairro Pedro Gondim",
+          "",
+          "",
+          "CEP 58.031-130",
+          "",
+          "Data saida 13/10/2025",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        [
+          "Municipio joäo Pessoa",
+          "",
+          "",
+          "",
+          "Fone/Fax (83) 98803-1345",
+          "",
+          "",
+          "UF PB",
+          "",
+          "Hora saida 10:00",
+          "",
+          "Informaçöes do local de retirada",
+          "",
+          "Nome/Razo Social",
+          "",
+          "",
+          ""
+        ],
+        [
+          "Endereço Rua Professor Joaguim Francisco Veloso Galvao, 1549 -Apt 302",
+          "",
+          "",
+          "",
+          "Bairro Pedro Gondim",
+          "",
+          "",
+          "CEP 58031130",
+          "",
+          "Municipio joao Pessoa",
+          "",
+          "UF PB",
+          "",
+          "Fone/Fax",
+          "",
+          "",
+          ""
+        ],
+        [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        [
+          "Número 175894/1",
+          "",
+          "",
+          "",
+          "Vencimento 10/11/2025",
+          "1,00",
+          "",
+          "",
+          "Vencimento",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        [
+          "Base de calculo do lCMs 1.269,90",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        [
+          "Valor do frete 0,00",
+          "Valor do seguro 0,00",
+          "Desconto 30,00",
+          "Outras despesas acessorias 0,00",
+          "Valor do IPI 0,00",
+          "Valor total da nota 1.269,90",
+          "Transportado r/Vo lu mes tra nspo rtados",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        [
+          "Nome Fedex Brasil Logistica e Transportes S/A",
+          "Frete por conta",
+          "",
+          "Código ANTT",
+          "Placa do veiculo",
+          "UF",
+          "CNPJ/CPF 95.591.723/0187-51",
+          "0",
+          "Contrat. Remetente",
+          "Endereço Rua Doutor Pedro Zimmermann",
+          "",
+          "Municipio Blumenau",
+          "UF sC",
+          "Inscricao Estadual 262287560",
+          "",
+          "",
+          ""
+        ],
+        [
+          "",
+          "Quantidade 1",
+          "Espécie Volume",
+          "",
+          "",
+          "Marca",
+          "Numeraçao",
+          "",
+          "Peso bruto 17,000",
+          "Peso líquido 16,000",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        [
+          "Codigo",
+          "",
+          "Descriçao do produto/serviço",
+          "NCM/SH",
+          "",
+          "",
+          "",
+          "",
+          "Preço un",
+          "",
+          "Preco total",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        [
+          "2005431",
+          "Cadeira de Escritorio Comfy Aurora Cinza Mesh Cinza, Brago 3D, Assento Deslizante e Relax",
+          "",
+          "94013900500",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "88,89",
+          "0,00",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        [
+          "",
+          "Inscriçao Municipal 32284",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        [
+          "",
+          "Observagoes Para fins do disposto no artigo 166 do Codigo Tributario Nacional, o destinatario da mercadoria descrita acima,declara que os encargos oriundos do ICMS DiFAL foram suportados pelo remetente, estando este expressamente autorizado a pleitear sua restituicao perante Fisco Estadual pelos motivos que entender cabiveis. Val Aprox Tributos R$ Fed:194,68(15,33%)Est: 215,88(17,00%) Mun: 0,00(0,00%）Fonte:IBPTVersao 25.2.E Valores totais do ICMS Interestadual: DIFAL da UF Destino R$165,09 + FCPR$O,0O;DIFAL da UF Origem R$O,OO. Numero do Pedido de Venda:191777 Número da Ordem De Compra:1000305470 Celular:(83) 98803-1345",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      ]
+    }
+  ],
+  "unplaced_text": [
+    {
+      "text": "Inscrigao Esadual"
+    },
+    {
+      "text": "Data emissao"
+    },
+    {
+      "text": "146.492.554-22"
+    },
+    {
+      "text": "Faturas"
+    },
+    {
+      "text": "Valor Número"
+    },
+    {
+      "text": "calculo do imposto"
+    },
+    {
+      "text": "Valor do ICMS"
+    },
+    {
+      "text": "Base de cálculo do ICMS Subst."
+    },
+    {
+      "text": "Valor do ICMS Subst."
+    },
+    {
+      "text": "Valor dos produtos faturados"
+    },
+    {
+      "text": "1.299,90"
+    },
+    {
+      "text": "Itens da nota fiscal"
+    },
+    {
+      "text": "CST CFOP UN Qtde"
+    },
+    {
+      "text": "BC ICMs VIr.ICMS"
+    },
+    {
+      "text": "VIr.IPI"
+    },
+    {
+      "text": "%ICMS %IPI"
+    },
+    {
+      "text": "6.108Un"
+    },
+    {
+      "text": "1,001.299,901.299,901.269,90"
+    },
+    {
+      "text": "7,000.00"
+    },
+    {
+      "text": "Cálculo do ISSQN"
+    },
+    {
+      "text": "Valor total dos servigos"
+    },
+    {
+      "text": "Base de cálculo do ISSQN"
+    },
+    {
+      "text": "Valor do ISSQN"
+    },
+    {
+      "text": "Dados adicionais"
+    },
+    {
+      "text": "Reservado ao fisco"
+    },
+    {
+      "text": "Obtenhao arquivo diqitalemhttps://comfy.eccosys.com.br/nfe"
+    },
+    {
+      "text": "13/10/2025 10:00:26"
+    }
+  ]
+}

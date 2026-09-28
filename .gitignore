@@ -1,4 +1,19 @@
+# Ambientes Python e caches
 venv/
-.env
 .venv/
 __pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Configuração local
+.env
+.env.*
+
+# Entradas e resultados em input/ e output/ são versionáveis.
+
+# Arquivos do sistema operacional
+.DS_Store
+Thumbs.db

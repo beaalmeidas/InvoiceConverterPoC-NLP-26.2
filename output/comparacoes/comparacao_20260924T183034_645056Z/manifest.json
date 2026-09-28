@@ -1,0 +1,45 @@
+{
+  "model": "qwen2.5vl:7b",
+  "started_at": "20260924T183034_645056Z",
+  "input": "/content/invoice_xoq29h4s/nota_vmgrto1r/nota.png",
+  "input_sha256": "0e163800429fa5419f5df1567c1a17b0f880e306c84df9950c81a18b21a404b0",
+  "ocr_json": "/content/invoice_xoq29h4s/nota_vmgrto1r/ocr_local/nota_res.json",
+  "ocr_json_sha256": "bcc23ece67e9ed015af0e3f26781d9e79aafb2ed1d9bfc736bf2cb9132b4a0e9",
+  "input_format": "mixed",
+  "image_preprocess": "off",
+  "num_ctx": 16384,
+  "num_predict": 8192,
+  "temperature": 0,
+  "seed": 42,
+  "results": [
+    {
+      "preprocess": "sem",
+      "format": "html",
+      "file": "sem_preprocessamento.html",
+      "status": "error",
+      "error": "prediction aborted, token repeat limit reached (status code: 500)",
+      "seconds": 142.243
+    },
+    {
+      "preprocess": "sem",
+      "format": "markdown",
+      "file": "sem_preprocessamento.md",
+      "status": "ok",
+      "seconds": 56.253
+    },
+    {
+      "preprocess": "com",
+      "format": "html",
+      "file": "com_preprocessamento.html",
+      "status": "ok",
+      "seconds": 79.799
+    },
+    {
+      "preprocess": "com",
+      "format": "markdown",
+      "file": "com_preprocessamento.md",
+      "status": "ok",
+      "seconds": 45.745
+    }
+  ]
+}
