@@ -5,8 +5,6 @@ import json
 BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = BASE_DIR / "output"
 
-# transforma output numa saída menor e mais fácil de se usar/manipular 
-# com intuito de averiguar melhoria na extração se o json tiver simplificado
 def simplify_result(res):
     result = res.json
 
