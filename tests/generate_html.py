@@ -1,4 +1,7 @@
 from pathlib import Path
+import argparse
+from collections import Counter
+from html.parser import HTMLParser
 import json
 import re
 import ollama
@@ -13,8 +16,9 @@ You are converting OCR output from a Brazilian electronic invoice (NF-e) into HT
 
 Create a complete HTML document containing the invoice as a readable, compact table.
 - Keep all recognized text exactly as given and in the same order. Do not summarize, correct, or invent text.
-- Preserve table rows, cells, rowspan, and colspan. Do not merge unrelated cells.
-- Include semantic HTML and a table; return only HTML, without Markdown fences or explanations.
+- Preserve table rows, cells, rowspan, and colspan. Keep td/th tags unchanged. Do not merge unrelated cells.
+- Return a complete HTML document with explicitly closed html, body, table, tr and td/th tags.
+- Include every input table and every row. Return only HTML, without Markdown fences or explanations.
 """
 
 HTML_STYLE = """<style>
@@ -32,7 +36,7 @@ img { max-width: 100%; height: auto; }
 SOURCE_INSTRUCTIONS = {
     "compact": "The input is compact PaddleOCR JSON. Use each block's content; type identifies the block and bbox is only for position/order. Never show bbox.",
     "markdown": "The input is PaddleOCR Markdown. Preserve its text and any HTML tables included in it.",
-    "full_json": "The input is the full PaddleOCR JSON. Use document text and table markup from parsing_res_list/block_content (including inside res.parsing_res_list if wrapped). Ignore model settings, scores, dimensions, and other processing metadata; never turn those numbers into invoice content. Use bounding boxes only to determine reading order.",
+    "full_json": "The input contains the recognized blocks extracted from the full PaddleOCR JSON. Use content as document text/table markup, type as the block label and bbox only for reading order. Do not print coordinates.",
 }
 
 
@@ -95,35 +99,125 @@ def output_path(layout_path, kind):
     return layout_path.with_name(stem + suffix)
 
 
+class DocumentParser(HTMLParser):
+    tracked = {"html", "body", "table", "thead", "tbody", "tfoot", "tr", "td", "th"}
+
+    def __init__(self):
+        super().__init__()
+        self.stack = []
+        self.errors = []
+        self.counts = Counter()
+        self.text = []
+        self.hidden = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in {"style", "script"}:
+            self.hidden += 1
+        if tag in self.tracked:
+            self.stack.append(tag)
+            self.counts[tag] += 1
+
+    def handle_endtag(self, tag):
+        if tag in {"style", "script"}:
+            self.hidden = max(0, self.hidden - 1)
+        if tag in self.tracked:
+            if not self.stack or self.stack[-1] != tag:
+                self.errors.append(f"Fechamento inesperado: {tag}")
+            else:
+                self.stack.pop()
+
+    def handle_data(self, data):
+        if not self.hidden:
+            self.text.append(data)
+
+
+def inspect_html(text):
+    parser = DocumentParser()
+    parser.feed(text)
+    parser.close()
+    return parser
+
+
+def source_html(kind, content):
+    if kind == "markdown":
+        return content
+    return "\n".join(str(block.get("content") or "") for block in json.loads(content))
+
+
+def validate_response(raw, reference, reason):
+    if reason == "length":
+        raise ValueError("Ollama atingiu o limite de geração (done_reason=length).")
+    result = inspect_html(raw)
+    if result.stack or result.errors:
+        raise ValueError("HTML incompleto ou com tags fora de ordem.")
+    if any(result.counts[tag] == 0 for tag in ("html", "body", "table")):
+        raise ValueError("Resposta sem documento HTML completo e tabela.")
+    source = inspect_html(reference)
+    for tag in ("table", "tr", "td", "th"):
+        if result.counts[tag] != source.counts[tag] and source.counts[tag]:
+            raise ValueError(f"Estrutura alterada: {tag}: entrada={source.counts[tag]}, saída={result.counts[tag]}.")
+    expected = Counter(re.findall(r"\w+", " ".join(source.text).casefold()))
+    actual = Counter(re.findall(r"\w+", " ".join(result.text).casefold()))
+    coverage = sum((expected & actual).values()) / max(1, sum(expected.values()))
+    if coverage < 0.95:
+        raise ValueError(f"Conteúdo incompleto: apenas {coverage:.1%} dos termos da entrada preservados.")
+    return coverage
+
+
 def main():
-    layout_files = sorted(RESULTS_DIR.rglob("*_layout.json"))
+    parser = argparse.ArgumentParser(description="Gera HTML e rejeita respostas incompletas")
+    parser.add_argument("--results-dir", type=Path, default=RESULTS_DIR)
+    parser.add_argument("--limit", type=int, default=0, help="Máximo de páginas; 0 = todas")
+    parser.add_argument("--num-ctx", type=int, default=16384)
+    parser.add_argument("--num-predict", type=int, default=8192)
+    args = parser.parse_args()
+    if args.limit < 0 or args.num_predict < 1 or args.num_ctx <= args.num_predict:
+        parser.error("Limite deve ser >= 0 e num-ctx deve ser maior que num-predict > 0")
+    layout_files = sorted(args.results_dir.rglob("*_layout.json"))
+    if args.limit:
+        layout_files = layout_files[:args.limit]
     if not layout_files:
-        raise FileNotFoundError(
-            f"Nenhum JSON compacto (*_layout.json) foi encontrado em {RESULTS_DIR}. Rode main.py primeiro."
-        )
+        raise FileNotFoundError(f"Nenhum JSON compacto encontrado em {args.results_dir}. Rode main.py primeiro.")
 
     for layout_path in layout_files:
         for kind, source_path in source_files(layout_path).items():
             if not source_path.is_file():
-                print(f"Entrada {kind} ausente: {source_path.relative_to(BASE_DIR)}")
+                print(f"Entrada {kind} ausente: {source_path}")
                 continue
-
+            destination = output_path(layout_path, kind)
+            log_path = destination.with_suffix(".generation.json")
+            log = {"source": str(source_path), "model": MODEL,
+                   "options": {"temperature": 0, "num_ctx": args.num_ctx, "num_predict": args.num_predict},
+                   "status": "failed"}
             try:
                 content = prepare_content(kind, source_path)
+                print(f"Gerando {kind}: {source_path}", flush=True)
                 response = ollama.chat(
                     model=MODEL,
                     messages=[{"role": "user", "content": prompt_for(kind, content)}],
-                    options={"temperature": 0},
+                    options=log["options"],
                 )
-                html = add_presentation(response["message"]["content"])
-                if not re.search(r"<table\b", html, flags=re.IGNORECASE):
-                    raise ValueError("A resposta do modelo não contém uma tabela HTML; arquivo não salvo.")
-
-                destination = output_path(layout_path, kind)
-                destination.write_text(html, encoding="utf-8")
-                print(f"HTML ({kind}) salvo: {destination.relative_to(BASE_DIR)}")
+                for key in ("done", "done_reason", "prompt_eval_count", "eval_count", "total_duration", "eval_duration"):
+                    log[key] = response.get(key)
+                raw = response["message"]["content"].strip()
+                # Guarda a resposta original para diagnosticar inclusive falhas de validação.
+                destination.with_suffix(".response.txt").write_text(raw, encoding="utf-8")
+                raw = re.sub(r"^```(?:html)?\s*|\s*```$", "", raw, flags=re.IGNORECASE)
+                log["content_coverage"] = validate_response(raw, source_html(kind, content), log.get("done_reason"))
+                html = add_presentation(raw)
+                temporary = destination.with_suffix(".tmp")
+                temporary.write_text(html, encoding="utf-8")
+                temporary.replace(destination)
+                log["status"] = "accepted"
+                print(f"HTML ({kind}) salvo: {destination}", flush=True)
             except Exception as exc:
-                print(f"Falha no fluxo {kind} para {source_path.name}: {exc}")
+                log["error"] = str(exc)
+                # Evita que o validador conte um resultado antigo como sucesso da nova execução.
+                if destination.exists():
+                    destination.replace(destination.with_suffix(".previous.html"))
+                print(f"Falha no fluxo {kind} para {source_path.name}: {exc}", flush=True)
+            finally:
+                log_path.write_text(json.dumps(log, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 if __name__ == "__main__":
