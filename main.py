@@ -15,17 +15,23 @@ def simplify_result(res):
     # pega apenas blocos estruturais essenciais do json ao invés de todo o conteúdo
     return [
         {
+            "id": i,
             "type": block.get("block_label"),
             "bbox": block.get("block_bbox"),
             "content": block.get("block_content"),
         }
-        for block in blocks
+        for i, block in enumerate(blocks)
     ]
 
 
 pipeline = PPStructureV3(
-    use_doc_orientation_classify=False,
-    use_doc_unwarping=False,
+    # atualização -> testando parâmetros (orientation, unwarping) com True ativado para ver se melhorias aparecem
+    # 1⁰ teste: ambos true
+    # 2⁰ teste: um true outro false
+    # 3⁰ teste: um false outro true
+    # 4⁰ teste: ambos false (como no default)
+    use_doc_orientation_classify=True,
+    use_doc_unwarping=True,
     enable_mkldnn=False,
     # minha cpu tava atingindo 100$ da capacidade ai reduzi o paralelismo pro codigo rodar mais levinho
     cpu_threads=2,
