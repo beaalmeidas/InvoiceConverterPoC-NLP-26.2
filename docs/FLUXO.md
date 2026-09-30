@@ -15,7 +15,9 @@ imagem → PaddleOCR → JSON → HTML
    python main.py
    ```
 
-   O PaddleOCR lê as imagens PNG da amostra. No momento, `main.py` está limitado às primeiras cinco capturas (`input_files[:5]`) para o teste piloto. Remova esse limite para processar as 306 imagens. Para cada captura, cria uma pasta própria em `output/output-sintetico/`, com os resultados do OCR e um JSON compacto por página.
+   O PaddleOCR lê as imagens PNG da amostra. Por padrão, `main.py` processa as primeiras cinco capturas. Use `python main.py --limit 1` para uma imagem ou `python main.py --limit 0` para todas. Para cada captura, cria uma pasta própria em `output/output-sintetico/`, com os resultados do OCR e um JSON compacto por página.
+
+   A correção de deformação (`use_doc_unwarping`) fica desligada: as capturas sintéticas já são planas e essa etapa estava cortando a margem da imagem. A orientação continua ativada.
 
 3. Instale o [Ollama](https://ollama.com/) e baixe o modelo usado pelo script:
 
@@ -31,7 +33,11 @@ imagem → PaddleOCR → JSON → HTML
    python tests/generate_html.py
    ```
 
-   O script lê o JSON compacto para localizar cada página e, na mesma pasta, procura também o Markdown e o JSON completo do PaddleOCR. Cada entrada é enviada ao Ollama separadamente. Os arquivos terminam em `_html.html` (JSON compacto), `_from_md_html.html` (Markdown) e `_from_full_json_html.html` (JSON completo).
+   O script lê o JSON compacto para localizar cada página e, na mesma pasta, procura também o Markdown e o JSON completo do PaddleOCR. Cada entrada é enviada ao Ollama separadamente. No fluxo que lê o JSON completo, o script extrai os blocos reconhecidos antes do envio: portanto, a comparação atual não usa o JSON integral com todos os metadados. Os arquivos terminam em `_html.html` (JSON compacto), `_from_md_html.html` (Markdown) e `_from_full_json_html.html` (JSON completo).
+
+   O script usa contexto de 16384 tokens e limite de saída de 8192 tokens (ajustáveis com `--num-ctx` e `--num-predict`). Isso pode aumentar o uso de memória. Antes de salvar, rejeita respostas cortadas, tags estruturais sem fechamento, mudanças nas contagens de tabelas/células/linhas existentes e perda de mais de 5% dos termos da entrada. Essas verificações não garantem fidelidade visual nem detectam todos os erros de conteúdo.
+
+   Ao lado de cada saída, `.response.txt` guarda a resposta original e `.generation.json` guarda o resultado, o motivo de término e os tokens usados. Se a nova tentativa falhar, um HTML anterior é movido para `.previous.html`, evitando que seja avaliado como um resultado novo. O CSS é aplicado somente após essa checagem.
 
 5. Compare OCR e HTML com os gabaritos:
 
@@ -42,6 +48,20 @@ imagem → PaddleOCR → JSON → HTML
    O relatório `output/output-sintetico/relatorio_validacao.md` compara os três formatos de entrada e os três HTMLs com o gabarito. Aponta texto faltando ou extra, diferenças na estrutura das tabelas e valores do XML ausentes. Também resume os resultados por resolução, aparência e estrutura. Rode esta etapa depois do OCR e da geração HTML. Se ainda não houver resultados, o relatório avisa que a comparação está pendente.
 
 Rode os comandos a partir da pasta principal do projeto. Os scripts locais encontram os arquivos usando a localização do projeto.
+
+## Testar uma imagem sem sobrescrever o lote
+
+```bash
+python main.py --file input/amostra_diversa/captura/100/01-16a40-espacada-100/p01.png --limit 1 --output output/diagnostico-sem-unwarping
+```
+
+O primeiro teste está registrado em `output/diagnostico-sem-unwarping/COMPARACAO.md`: recuperou a margem e um código cortado, mas ainda houve mistura de células. Compare os arquivos dessa pasta com os antigos em `output/output-sintetico`. Primeiro confira os textos, códigos e tabelas do OCR. Depois gere os três HTMLs do teste:
+
+```bash
+python tests/generate_html.py --results-dir output/diagnostico-sem-unwarping --limit 1
+```
+
+O validador de dataset continua usando `output/output-sintetico`; ele não inclui essa pasta de diagnóstico. Quando estiver satisfeito com o teste, rode o fluxo normal novamente para atualizar o lote. Para avaliar resolução, selecione capturas de 200 ou 300 dpi com `--file`; as cinco primeiras do lote são de 100 dpi. Prefira a mesma nota e layout quando disponíveis.
 
 ## Usar o notebook (opcional)
 
