@@ -3,10 +3,15 @@ from pathlib import Path
 import json
 import argparse
 
-BASE_DIR = Path(__file__).resolve().parent
-INPUT_DIR = BASE_DIR / "input" / "amostra_diversa" / "captura"
+# BASE_DIR = Path(__file__).resolve().parent
+# INPUT_DIR = BASE_DIR / "input" / "amostra_diversa" / "captura"
+# OUTPUT_DIR = BASE_DIR / "output"
+# RESULTS_DIR = OUTPUT_DIR / "output-sintetico"
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+INPUT_DIR = BASE_DIR / "input"
 OUTPUT_DIR = BASE_DIR / "output"
-RESULTS_DIR = OUTPUT_DIR / "output-sintetico"
+RESULTS_DIR = OUTPUT_DIR
 SUPPORTED_INPUTS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".pdf"}
 
 # transforma output numa saída menor e mais fácil de se usar/manipular 

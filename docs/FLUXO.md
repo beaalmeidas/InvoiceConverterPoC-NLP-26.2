@@ -30,7 +30,7 @@ imagem → PaddleOCR → JSON → HTML
 4. Gere três versões de HTML para cada página: uma usando o JSON compacto, uma usando o Markdown do OCR e uma usando o JSON completo:
 
    ```bash
-   python tests/generate_html.py
+   python src/generate_html.py
    ```
 
    O script lê o JSON compacto para localizar cada página e, na mesma pasta, procura também o Markdown e o JSON completo do PaddleOCR. Cada entrada é enviada ao Ollama separadamente. No fluxo que lê o JSON completo, o script extrai os blocos reconhecidos antes do envio: portanto, a comparação atual não usa o JSON integral com todos os metadados. Os arquivos terminam em `_html.html` (JSON compacto), `_from_md_html.html` (Markdown) e `_from_full_json_html.html` (JSON completo).
@@ -42,7 +42,7 @@ imagem → PaddleOCR → JSON → HTML
 5. Compare OCR e HTML com os gabaritos:
 
    ```bash
-   python tests/validate_dataset.py
+   python src/validate_dataset.py
    ```
 
    O relatório `output/output-sintetico/relatorio_validacao.md` compara os três formatos de entrada e os três HTMLs com o gabarito. Aponta texto faltando ou extra, diferenças na estrutura das tabelas e valores do XML ausentes. Também resume os resultados por resolução, aparência e estrutura. Rode esta etapa depois do OCR e da geração HTML. Se ainda não houver resultados, o relatório avisa que a comparação está pendente.
@@ -58,7 +58,7 @@ python main.py --file input/amostra_diversa/captura/100/01-16a40-espacada-100/p0
 O primeiro teste está registrado em `output/diagnostico-sem-unwarping/COMPARACAO.md`: recuperou a margem e um código cortado, mas ainda houve mistura de células. Compare os arquivos dessa pasta com os antigos em `output/output-sintetico`. Primeiro confira os textos, códigos e tabelas do OCR. Depois gere os três HTMLs do teste:
 
 ```bash
-python tests/generate_html.py --results-dir output/diagnostico-sem-unwarping --limit 1
+python src/generate_html.py --results-dir output/diagnostico-sem-unwarping --limit 1
 ```
 
 O validador de dataset continua usando `output/output-sintetico`; ele não inclui essa pasta de diagnóstico. Quando estiver satisfeito com o teste, rode o fluxo normal novamente para atualizar o lote. Para avaliar resolução, selecione capturas de 200 ou 300 dpi com `--file`; as cinco primeiras do lote são de 100 dpi. Prefira a mesma nota e layout quando disponíveis.

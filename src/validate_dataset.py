@@ -297,7 +297,7 @@ def main():
             "# Validação da amostra DANFE\n\n"
             f"Manifesto: {len(manifest)} documentos; {sum(len(capture_paths(row)) for row in manifest)} imagens.\n\n"
             "Ainda não há resultados do OCR em `output/output-sintetico/`, então não foi possível comparar os três fluxos.\n\n"
-            "Rode `python main.py`, `python tests/generate_html.py` e depois `python tests/validate_dataset.py`.\n",
+            "Rode `python main.py`, `python src/generate_html.py` e depois `python src/validate_dataset.py`.\n",
             encoding="utf-8",
         )
         print(f"Relatório inicial salvo em {REPORT_PATH.relative_to(BASE_DIR)}")
