@@ -1,5 +1,23 @@
+# ambiente
+.venv/
 venv/
 .env
-.venv/
 __pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# saídas geradas
+output/
+runs/
+*.log
+
+# pacotes do colab
+colab.zip
+colab_resultados.zip
+
+# dados grandes
+input/amostra_diversa/
+
+# local
 arquivos_mortos/
+.DS_Store
