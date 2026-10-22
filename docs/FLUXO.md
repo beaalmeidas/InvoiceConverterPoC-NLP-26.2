@@ -30,7 +30,7 @@ Os HTMLs ficam em `output/html/minhas-notas/`; os intermediários, em
 ## Conferir a amostra
 
 ```bash
-python tests/validate_dataset.py
+python scripts/validate_dataset.py
 ```
 
 Os relatórios ficam em `output/intermediarios/output-sintetico/`.
@@ -59,8 +59,8 @@ Paddle em GPU), tokens e custo, e salva em `runs/metrics_<timestamp>.json`.
 ## Notebook e Colab
 
 `notebooks/pipeline_openrouter.ipynb` roda OCR → HTML via OpenRouter com as métricas.
-No Colab: crie o secret `OPENROUTER_API_KEY`, suba o notebook e envie o `colab.zip`
-(`pipeline.py` + uma imagem) quando pedido. Se o Colab pedir, reinicie a sessão após a
+O notebook tem o código da pipeline inteiro. No Colab: crie o secret
+`OPENROUTER_API_KEY`, suba o notebook e envie a imagem da nota quando pedido. Se o Colab pedir, reinicie a sessão após a
 instalação e rode tudo de novo. A última célula baixa `output/` e `runs/` num zip.
 
 ## Código

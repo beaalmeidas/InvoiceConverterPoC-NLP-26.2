@@ -1,27 +1,24 @@
 # InvoiceConverterPoC-NLP-26.2
 
-OCR de notas fiscais (PaddleOCR) → HTML, direto ou via LLM (Ollama / OpenRouter), com métricas por etapa.
+OCR de notas fiscais (PaddleOCR) → HTML, direto ou via LLM (OpenRouter), com métricas por etapa.
 Detalhes do fluxo em [`docs/FLUXO.md`](docs/FLUXO.md).
 
 ## Rodar localmente
 
 ```bash
 pip install -r requirements.txt
-echo "OPENROUTER_API_KEY=sua_chave" > .env   # só para o engine openrouter
+cp .env.example .env   # coloque sua chave; só para o engine openrouter
 ```
 
 Depois abra `notebooks/pipeline_openrouter.ipynb` ou use `python main.py`.
 
 ## Rodar no Google Colab
 
-1. Gere o `colab.zip` na raiz do projeto (ele não vai para o GitHub):
+O notebook tem todo o código da pipeline; não precisa do `pipeline.py` nem de zip.
 
-   ```bash
-   zip colab.zip pipeline.py input/amostra_diversa/captura/300/01-1-cinza-300/p01.png
-   ```
+1. No Colab, crie o secret `OPENROUTER_API_KEY` (🔑) e suba `notebooks/pipeline_openrouter.ipynb`.
+2. Rode as células e envie a imagem da nota quando a célula de preparo pedir.
+3. Se mudar o `pipeline.py` (por exemplo, o prompt), copie a mudança também para a célula correspondente do notebook.
+4. A última célula baixa `output/` e `runs/` num `colab_resultados.zip`. A sessão do Colab é temporária: o que não for baixado se perde.
 
-   Gere de novo sempre que alterar o `pipeline.py` (por exemplo, o prompt), senão o Colab roda a versão antiga.
-
-2. No Colab, crie o secret `OPENROUTER_API_KEY` (🔑) e suba `notebooks/pipeline_openrouter.ipynb`.
-3. Rode a primeira célula de código e envie o `colab.zip` quando ela pedir.
-4. A última célula baixa `output/` e `runs/` num `colab_resultados.zip`.
+O raciocínio do modelo fica desligado (`REASONING = False`): ligado, o Qwen gasta de 5 a 16 mil tokens pensando e pode truncar o HTML.
