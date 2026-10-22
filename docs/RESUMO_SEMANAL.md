@@ -54,3 +54,18 @@ Foi feito (notebook `pipeline_openrouter.ipynb`):
 - Métricas de tempo, CPU, RAM e tokens por etapa, com resumo no final.
 - Com 1 nota no Colab: `predict` 131 s, HTML pela OpenRouter 30 s, custo $0.
 - Última célula empacota `output/` e `runs/` num zip para baixar os resultados.
+
+## Semana 5 — 19 a 25/10
+
+Foi feito:
+
+- Criei um script (`scripts/avaliar.py`) que compara os HTMLs gerados com os gabaritos do dataset sintético.
+- Testei se o LLM ajuda a montar o HTML. Na prática não ajudou: o HTML gerado direto do OCR, sem LLM, saiu igual, e o LLM ainda demora uns 30 a 60 s por nota. Numa das notas ele inventou rótulos que não estavam no OCR.
+- Comparei as três entradas do LLM (JSON compacto, JSON completo e Markdown). Deram resultados bem parecidos; o Markdown perde um pouco de texto.
+- A reconstrução das tabelas pelas bordas fez bastante diferença: o acerto das células praticamente dobrou e os produtos passaram a sair certos em boa parte das notas.
+- A maioria dos erros vem do OCR. Nas notas em paisagem, ele girava algumas linhas por engano e lia lixo no lugar do destinatário. Desliguei essa opção no notebook e os campos da nota em paisagem testada subiram de 66,7% para 88,9%.
+- Tentei acelerar o OCR com modelos mais leves, mas a leitura das tabelas piorou, então mantive os atuais.
+- Coloquei todo o código da pipeline dentro do notebook do Colab. Agora não precisa mais do `colab.zip`, só enviar a imagem.
+- Enxuguei o `pipeline.py`, tirando o Ollama e opções que ninguém usava.
+- Organizei o repositório: apaguei arquivos soltos e docs repetidos, movi o `validate_dataset.py` para `scripts/` e atualizei o `.gitignore`.
+- Não consegui testar o modelo lendo a imagem direto: o Qwen gratuito saiu do OpenRouter e o Gemma gratuito estava sem cota.
