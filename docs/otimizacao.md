@@ -71,7 +71,7 @@ versão de 443 linhas. A geração dos três formatos de HTML concluiu normalmen
 A conferência da amostra pode ser executada separadamente:
 
 ```bash
-.venv/bin/python tests/validate_dataset.py
+.venv/bin/python scripts/validate_dataset.py
 ```
 
 ## Medições da refatoração inicial

@@ -11,6 +11,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import main
 import pipeline
 from validate_dataset import check_products, decimal_cell, product_rows, source_html, validate_response
@@ -51,7 +52,7 @@ class OcrInputTests(unittest.TestCase):
         paths = [root / f"{dpi}/nota.png" for dpi in (100, 300, 150, 200)]
         self.assertEqual(sorted(paths, key=lambda p: pipeline.input_order(p, root))[0], root / "300/nota.png")
 
-    def test_prepare_image_enlarges_crops_and_never_reduces(self):
+    def test_prepare_image_enlarges_and_never_reduces(self):
         with TemporaryDirectory() as folder:
             small, large, out = Path(folder, "small.png"), Path(folder, "large.png"), Path(folder, "out.png")
             Image.new("RGB", (400, 600), "white").save(small)
@@ -59,13 +60,9 @@ class OcrInputTests(unittest.TestCase):
             original = small.read_bytes()
             self.assertEqual(Image.open(pipeline.prepare_image(small, out, 1600)).size, (1600, 2400))
             self.assertEqual(small.read_bytes(), original)
-            self.assertEqual(Image.open(pipeline.prepare_image(small, out, 1600, (100, 100, 300, 200))).size,
-                             (1600, 800))
             out.unlink()
             self.assertEqual(pipeline.prepare_image(large, out, 1600), large)
             self.assertFalse(out.exists())
-            with self.assertRaisesRegex(ValueError, "limites"):
-                pipeline.prepare_image(small, out, 1600, (-1, 0, 100, 100))
 
     def test_simplify_result_accepts_wrapped_json_string(self):
         block = {"block_label": "text", "block_bbox": [1, 2, 3, 4], "block_content": "Nota"}
@@ -208,7 +205,7 @@ class HtmlTests(unittest.TestCase):
 
 class OpenRouterTests(unittest.TestCase):
     def test_response_and_usage_are_recorded(self):
-        with patch.object(pipeline, "_client", lambda engine: fake_openrouter("```html\n<p>Nota</p>\n```")), \
+        with patch.object(pipeline, "_client", lambda: fake_openrouter("```html\n<p>Nota</p>\n```")), \
              pipeline.stage("llm") as record:
             html = pipeline.ask_llm("compact", "[]")
         pipeline.records.clear()
@@ -218,12 +215,12 @@ class OpenRouterTests(unittest.TestCase):
     def test_truncated_or_empty_response_fails(self):
         for content, reason in (("<p>Nota", "length"), (None, "stop")):
             with self.subTest(reason=reason), self.assertRaises(ValueError), \
-                 patch.object(pipeline, "_client", lambda engine: fake_openrouter(content, reason)):
+                 patch.object(pipeline, "_client", lambda: fake_openrouter(content, reason)):
                 pipeline.ask_llm("compact", "[]")
 
 
 class EndToEndTests(unittest.TestCase):
-    def test_cli_keeps_html_separate_from_logs_and_backups(self):
+    def test_cli_keeps_html_separate_from_logs(self):
         with TemporaryDirectory() as folder:
             root = Path(folder)
             inputs, outputs = root / "input", root / "output"
@@ -251,14 +248,13 @@ class EndToEndTests(unittest.TestCase):
                 main.main(["ocr", "--input", str(inputs), "--output", str(outputs), "--min-width", "0",
                            "--no-ruled-tables"])
                 main.main(["html", "--output", str(outputs)])
-                with patch.object(pipeline, "_client", lambda engine: fake_openrouter(table)):
+                with patch.object(pipeline, "_client", lambda: fake_openrouter(table)):
                     main.main(["html", "--output", str(outputs), "--engine", "openrouter"])
             intermediate, html = pipeline.result_directories(outputs)
             self.assertEqual(len(list(html.rglob("*.html"))), 3)
             self.assertFalse(list(html.rglob("*.json")))
-            self.assertEqual(len(list(intermediate.rglob("*.previous.html"))), 3)
             log = json.loads((intermediate / "p01_png/p01_page_001_html.generation.json").read_text())
-            self.assertEqual((log["status"], log["model"], log["tokens_in"]), ("accepted", pipeline.MODELS["openrouter"], 100))
+            self.assertEqual((log["status"], log["model"], log["tokens_in"]), ("accepted", pipeline.MODEL, 100))
             self.assertTrue((intermediate / "p01_png/ocr_run.json").exists())
             self.assertEqual(len(list((root / "runs").glob("metrics_*.json"))), 3)
 

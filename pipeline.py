@@ -1,4 +1,4 @@
-"""ocr de notas fiscais (paddleocr) → html direto ou via llm, com métricas por etapa."""
+"""ocr de notas fiscais (paddleocr) → html direto ou via llm (openrouter), com métricas por etapa."""
 from contextlib import contextmanager
 from datetime import datetime
 from functools import cache
@@ -7,7 +7,6 @@ import json
 import os
 from pathlib import Path
 import re
-import sys
 import threading
 import time
 
@@ -18,7 +17,7 @@ BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = BASE_DIR / "output"
 RUNS_DIR = BASE_DIR / "runs"
 SUPPORTED_INPUTS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".pdf"}
-MODELS = {"ollama": "qwen2.5vl:7b", "openrouter": "qwen/qwen3.8-27b:free"}
+MODEL = "qwen/qwen3.8-27b:free"
 HTML_SUFFIX = {"compact": "_html.html", "markdown": "_from_md_html.html", "full_json": "_from_full_json_html.html"}
 
 # ---------- métricas ----------
@@ -26,20 +25,19 @@ HTML_SUFFIX = {"compact": "_html.html", "markdown": "_from_md_html.html", "full_
 records, _active = [], []
 
 
-def _sample_ram(record, stop):
-    process = psutil.Process()
-    while True:
-        record["peak_ram_mb"] = max(record["peak_ram_mb"], process.memory_info().rss / 2**20)
-        if stop.wait(.05):
-            return
-
-
 @contextmanager
 def stage(name):
-    """mede tempo, cpu, pico de ram/vram e tokens de llm de uma etapa."""
+    """mede tempo, cpu, pico de ram e tokens de llm de uma etapa."""
     record = {"stage": name, "peak_ram_mb": 0, "tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0}
-    stop = threading.Event()
-    sampler = threading.Thread(target=_sample_ram, args=(record, stop), daemon=True)
+    stop, process = threading.Event(), psutil.Process()
+
+    def sample():  # ru_maxrss marcou 7,9 GB onde a amostragem do rss viu 1,9 GB
+        while True:
+            record["peak_ram_mb"] = max(record["peak_ram_mb"], process.memory_info().rss / 2**20)
+            if stop.wait(.05):
+                return
+
+    sampler = threading.Thread(target=sample, daemon=True)
     sampler.start()
     _active.append(record)
     cpu, started = time.process_time(), time.perf_counter()
@@ -49,11 +47,7 @@ def stage(name):
         _active.pop()
         stop.set()
         sampler.join()
-        paddle = sys.modules.get("paddle")
-        gpu = paddle and paddle.device.is_compiled_with_cuda()
-        # ru_maxrss marcou 7,9 GB onde a amostragem do rss viu 1,9 GB; por isso a amostragem
-        record.update(seconds=time.perf_counter() - started, cpu_seconds=time.process_time() - cpu,
-                      peak_vram_mb=paddle.device.cuda.max_memory_allocated() / 2**20 if gpu else None)
+        record.update(seconds=time.perf_counter() - started, cpu_seconds=time.process_time() - cpu)
         records.append(record)
 
 
@@ -69,8 +63,8 @@ def summary():
 
     table = pd.DataFrame(records).groupby("stage", sort=False).agg(
         calls=("seconds", "size"), seconds=("seconds", "sum"), cpu_seconds=("cpu_seconds", "sum"),
-        peak_ram_mb=("peak_ram_mb", "max"), peak_vram_mb=("peak_vram_mb", "max"),
-        tokens_in=("tokens_in", "sum"), tokens_out=("tokens_out", "sum"), cost_usd=("cost_usd", "sum"))
+        peak_ram_mb=("peak_ram_mb", "max"), tokens_in=("tokens_in", "sum"), tokens_out=("tokens_out", "sum"),
+        cost_usd=("cost_usd", "sum"))
     table.insert(2, "cpu_%", 100 * table.pop("cpu_seconds") / table.seconds)
     return table
 
@@ -83,8 +77,8 @@ def report(label="pipeline"):
     print(table.round(4).to_string())
     RUNS_DIR.mkdir(exist_ok=True)
     path = RUNS_DIR / f"metrics_{datetime.now():%Y%m%d_%H%M%S_%f}.json"
-    path.write_text(json.dumps({"label": label, "cpu_count": os.cpu_count(),
-                                "summary": table.reset_index().to_dict("records"), "stages": records},
+    path.write_text(json.dumps({"label": label, "cpu_count": os.cpu_count(), "stages": records,
+                                "summary": table.reset_index().to_dict("records")},
                                indent=2, default=lambda value: value.item()), encoding="utf-8")
     records.clear()
     print(f"Métricas: {path}")
@@ -96,12 +90,12 @@ def report(label="pipeline"):
 def result_directories(results_dir):
     """separa intermediários e htmls finais em output/intermediarios e output/html."""
     root = Path(results_dir).resolve()
-    if root.is_relative_to(OUTPUT_DIR):
-        relative = root.relative_to(OUTPUT_DIR)
-        if relative.parts and relative.parts[0] in {"html", "intermediarios"}:
-            relative = Path(*relative.parts[1:])
-        return OUTPUT_DIR / "intermediarios" / relative, OUTPUT_DIR / "html" / relative
-    return root / "intermediarios", root / "html"
+    if not root.is_relative_to(OUTPUT_DIR):
+        return root / "intermediarios", root / "html"
+    relative = root.relative_to(OUTPUT_DIR)
+    if relative.parts and relative.parts[0] in {"html", "intermediarios"}:
+        relative = Path(*relative.parts[1:])
+    return OUTPUT_DIR / "intermediarios" / relative, OUTPUT_DIR / "html" / relative
 
 
 def input_order(path, root):
@@ -112,30 +106,21 @@ def input_order(path, root):
 
 def select_inputs(root, dpi=None, limit=0):
     files = sorted((path for path in root.rglob("*") if path.is_file() and path.suffix.lower() in SUPPORTED_INPUTS
-                    and (not dpi or path.relative_to(root).parts[0] == str(dpi))),
-                   key=lambda path: input_order(path, root))
+                    and (not dpi or path.relative_to(root).parts[0] == str(dpi))), key=lambda p: input_order(p, root))
     return files[:limit] if limit else files
 
 
-def load_engine(lang="pt", doc_orientation=True, textline_orientation=True, unwarp=False,
-                det_max_side=1280, cpu_threads=2):
+def load_engine(lang="pt", doc_orientation=True, textline_orientation=True, det_max_side=1280, cpu_threads=2):
     from paddleocr import PPStructureV3
 
     return PPStructureV3(
-        lang=None if lang == "default" else lang,
-        ocr_version=None if lang == "default" else "PP-OCRv5",
-        use_doc_orientation_classify=doc_orientation,
-        use_textline_orientation=textline_orientation,
-        use_doc_unwarping=unwarp,
+        lang=None if lang == "default" else lang, ocr_version=None if lang == "default" else "PP-OCRv5",
+        use_doc_orientation_classify=doc_orientation, use_textline_orientation=textline_orientation,
+        use_doc_unwarping=False,  # capturas sintéticas já são planas
         enable_mkldnn=False,  # onednn falha no paddle 3.3.1 (ConvertPirAttribute2RuntimeAttribute)
-        cpu_threads=cpu_threads,  # 2 foi o mais rápido no i7-1355U; mais threads ficou mais lento
-        use_formula_recognition=False,
-        use_chart_recognition=False,
-        use_seal_recognition=False,
-        use_table_recognition=True,
-        text_det_limit_side_len=det_max_side,
-        text_det_limit_type="max",
-    )
+        cpu_threads=cpu_threads,  # 2 foi o mais rápido no i7-1355U
+        use_formula_recognition=False, use_chart_recognition=False, use_seal_recognition=False,
+        use_table_recognition=True, text_det_limit_side_len=det_max_side, text_det_limit_type="max")
 
 
 def simplify_result(res):
@@ -146,48 +131,38 @@ def simplify_result(res):
             for i, block in enumerate(data.get("res", data).get("parsing_res_list", []))]
 
 
-def prepare_image(source, destination, min_width=0, crop=None):
-    """recorta e amplia até min_width; sem mudança, devolve a própria origem."""
+def prepare_image(source, destination, min_width=0):
+    """amplia até min_width; imagem já larga volta como está."""
     from PIL import Image
 
     with Image.open(source) as image:
-        original_size = image.size
-        if crop:
-            x1, y1, x2, y2 = crop
-            if not (0 <= x1 < x2 <= image.width and 0 <= y1 < y2 <= image.height):
-                raise ValueError("Recorte fora dos limites da imagem")
-            image = image.crop(crop)
-        if image.width < min_width:
-            image = image.resize((min_width, round(image.height * min_width / image.width)),
-                                 Image.Resampling.LANCZOS)
-        if not crop and image.size == original_size:
+        if image.width >= min_width:
             return source
         destination.parent.mkdir(parents=True, exist_ok=True)
-        image.convert("RGB").save(destination)
+        image.resize((min_width, round(image.height * min_width / image.width)),
+                     Image.Resampling.LANCZOS).convert("RGB").save(destination)
         return destination
 
 
-def process_file(engine, input_path, input_root, output, min_width=1600, crop=None,
-                 table_mode="structure", ruled_tables=True, unwarp=False):
+def process_file(engine, input_path, input_root, output, min_width=1600, ruled_tables=True):
     """roda o ocr em uma imagem ou pdf, salva as saídas e retorna (pasta, status)."""
-    intermediates_dir, _ = result_directories(output)
     relative = input_path.relative_to(input_root)
-    folder = intermediates_dir / relative.parent / f"{input_path.stem}_{input_path.suffix[1:].lower()}"
+    folder = result_directories(output)[0] / relative.parent / f"{input_path.stem}_{input_path.suffix[1:].lower()}"
     folder.mkdir(parents=True, exist_ok=True)
     status = "ok"
     try:
         source = input_path
-        if input_path.suffix.lower() != ".pdf" and (crop or min_width):
+        if input_path.suffix.lower() != ".pdf":
             with stage("ocr:preparar_imagem"):
-                source = prepare_image(input_path, folder / "_inputs" / f"{input_path.stem}.png", min_width, crop)
+                source = prepare_image(input_path, folder / "_inputs" / f"{input_path.stem}.png", min_width)
         with stage("ocr:predict"):
-            pages = list(engine.predict(str(source), use_wired_table_cells_trans_to_html=table_mode == "cells"))
+            pages = list(engine.predict(str(source)))
         if not pages:
             raise ValueError("OCR não retornou páginas")
         for page, res in enumerate(pages, start=1):
             if ruled_tables:
                 with stage("ocr:reparar_tabelas"):
-                    repair_tables(res, source, unwarp)
+                    repair_tables(res, source)
             with stage("ocr:salvar"):
                 res.save_to_json(save_path=str(folder))
                 res.save_to_markdown(save_path=str(folder))
@@ -197,24 +172,21 @@ def process_file(engine, input_path, input_root, output, min_width=1600, crop=No
     except Exception as exc:
         status = "failed"
         print(f"Falha em {input_path.name}: {exc}", flush=True)
-    (folder / "ocr_run.json").write_text(json.dumps({"status": status, "crop": crop}), encoding="utf-8")
+    (folder / "ocr_run.json").write_text(json.dumps({"status": status}), encoding="utf-8")
     return folder, status
 
 # ---------- tabelas pelas bordas visíveis ----------
 
 
 def _boundaries(values, tolerance):
+    """agrupa coordenadas próximas e devolve a média de cada grupo."""
     groups = []
     for value in sorted(values):
-        if not groups or value - groups[-1][-1] > tolerance:
-            groups.append([value])
-        else:
+        if groups and value - groups[-1][-1] <= tolerance:
             groups[-1].append(value)
+        else:
+            groups.append([value])
     return [round(sum(group) / len(group)) for group in groups]
-
-
-def _nearest(value, boundaries):
-    return min(range(len(boundaries)), key=lambda i: abs(boundaries[i] - value))
 
 
 def _overlap(box, cell):
@@ -235,22 +207,19 @@ def detect_cells(image):
     borders = cv2.morphologyEx(horizontal | vertical, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
     _, _, stats, _ = cv2.connectedComponentsWithStats(255 - borders)
     return [[int(x), int(y), int(x+w), int(y+h)] for x, y, w, h, area in stats[1:]
-            if w >= 12 and h >= 8 and area / (w*h) > .8
-            and x > 0 and y > 0 and x+w < width and y+h < height]
+            if w >= 12 and h >= 8 and area / (w*h) > .8 and x > 0 and y > 0 and x+w < width and y+h < height]
 
 
 def ruled_table(image, ocr, bbox, cells=None):
     """reconstrói a tabela pela grade visível; sem bordas confiáveis, retorna None."""
-    cells = detect_cells(image) if cells is None else cells
-    cells = [cell for cell in cells if _overlap(cell, bbox) > .9]
+    cells = [cell for cell in (detect_cells(image) if cells is None else cells) if _overlap(cell, bbox) > .9]
     if len(cells) < 8:
         return None
     eligible = [(i, text, box) for i, (text, box) in enumerate(zip(ocr.get("rec_texts", []), ocr.get("rec_boxes", [])))
                 if text.strip() and _overlap(box, bbox) > .5]
     if not eligible:
         return None
-    assigned = [[] for _ in cells]
-    loose = []
+    assigned, loose = [[] for _ in cells], []
     for i, text, box in eligible:
         hits = sorted([(_overlap(box, cell), j) for j, cell in enumerate(cells)], reverse=True)
         if hits[0][0] >= .55 and (len(hits) == 1 or hits[1][0] < .25):
@@ -264,9 +233,11 @@ def ruled_table(image, ocr, bbox, cells=None):
     tolerance = max(3, round(image.shape[1] / 700))
     xs = _boundaries([v for c in cells for v in (c[0], c[2])], tolerance)
     ys = _boundaries([v for c in cells for v in (c[1], c[3])], tolerance)
-    grid = [(_nearest(c[0], xs), _nearest(c[1], ys), _nearest(c[2], xs), _nearest(c[3], ys)) for c in cells]
+    nearest = lambda value, edges: min(range(len(edges)), key=lambda i: abs(edges[i] - value))
+    grid = [(nearest(c[0], xs), nearest(c[1], ys), nearest(c[2], xs), nearest(c[3], ys)) for c in cells]
     if any(left >= right or top >= bottom for left, top, right, bottom in grid):
         return None
+    # faixas horizontais que nenhuma célula atravessa; faixas vizinhas com as mesmas colunas viram uma tabela
     cuts = [y for y in range(len(ys)) if not any(top < y < bottom for _, top, _, bottom in grid)]
     bands = []
     for lo, hi in zip(cuts, cuts[1:]):
@@ -275,8 +246,7 @@ def ruled_table(image, ocr, bbox, cells=None):
             continue
         signature = tuple(sorted({v for i in members for v in (grid[i][0], grid[i][2])}))
         if bands and bands[-1]["end"] == lo and bands[-1]["signature"] == signature:
-            bands[-1]["members"].extend(members)
-            bands[-1]["end"] = hi
+            bands[-1].update(end=hi, members=bands[-1]["members"] + members)
         else:
             bands.append({"start": lo, "end": hi, "signature": signature, "members": members})
 
@@ -295,30 +265,25 @@ def ruled_table(image, ocr, bbox, cells=None):
             starts = {columns.index(grid[i][0]): i for i in members if grid[i][1] == top}
             x = 0
             while x < len(columns)-1:
-                if x in occupied:
-                    x += 1
-                    continue
-                if x not in starts:
-                    html.append("<td></td>")
+                if x in occupied or x not in starts:
+                    html.append("" if x in occupied else "<td></td>")
                     x += 1
                     continue
                 i = starts[x]
                 left, _, right, bottom = grid[i]
-                colspan = columns.index(right) - columns.index(left)
-                rowspan = rows.index(bottom) - rows.index(top)
+                colspan, rowspan = columns.index(right) - columns.index(left), rows.index(bottom) - rows.index(top)
                 attrs = (f' colspan="{colspan}"' if colspan > 1 else "") + (f' rowspan="{rowspan}"' if rowspan > 1 else "")
                 html.append(f"<td{attrs}>{'<br>'.join(escape(line[3]) for line in sorted(assigned[i]))}</td>")
                 x += colspan
             html.append("</tr>")
         html.append("</tbody></table>")
         fragments.append((ys[band["start"]], "".join(html)))
-    # textos sem posição segura ficam fora das células
-    fragments.extend((y, f"<p>{escape(text)}</p>") for y, _, text in loose)
+    fragments.extend((y, f"<p>{escape(text)}</p>") for y, _, text in loose)  # textos sem posição segura
     return {"html": "\n".join(fragment for _, fragment in sorted(fragments, key=lambda part: part[0])),
             "cells": cells, "matched_lines": matched, "loose_line_ids": [i for _, i, _ in loose]}
 
 
-def repair_tables(res, input_path, unwarp=False):
+def repair_tables(res, input_path):
     blocks = [block for block in res["parsing_res_list"] if block.label == "table"]
     if not blocks:
         return
@@ -326,7 +291,7 @@ def repair_tables(res, input_path, unwarp=False):
 
     preprocessed = res.get("doc_preprocessor_res", {})
     image = preprocessed.get("output_img")
-    if image is None and not preprocessed.get("angle", 0) and not unwarp:
+    if image is None and not preprocessed.get("angle", 0):
         image = cv2.imread(str(input_path))
     if image is None:
         return
@@ -436,67 +401,53 @@ def add_presentation(html):
 
 
 @cache
-def _client(engine):
-    if engine == "ollama":
-        import ollama
-        return ollama.Client()
+def _client():
     from dotenv import load_dotenv
     from openai import OpenAI
+
     load_dotenv(BASE_DIR / ".env")
     return OpenAI(base_url="https://openrouter.ai/api/v1", api_key=os.environ["OPENROUTER_API_KEY"], max_retries=5)
 
 
-def ask_llm(kind, content, engine="openrouter", model=None, num_ctx=16384, num_predict=8192, reasoning=False):
+def ask_llm(kind, content, model=MODEL, num_predict=8192, reasoning=False):
     source = ("Input: PaddleOCR Markdown with HTML tables." if kind == "markdown" else
               "Input: OCR JSON blocks. Use content as text/table markup, type as label, bbox for layout only; hide coordinates.")
-    messages = [{"role": "user", "content": f"{BASE_PROMPT}{source}\n\n{content}"}]
-    model = model or MODELS[engine]
-    if engine == "ollama":
-        response = _client(engine).chat(model=model, messages=messages, keep_alive="10m", options={
-            "temperature": 0, "num_ctx": num_ctx, "num_predict": num_predict})
-        record_llm(response.get("prompt_eval_count"), response.get("eval_count"))
-        truncated, text = response.get("done_reason") == "length", response["message"]["content"]
-    else:
-        response = _client(engine).chat.completions.create(
-            model=model, messages=messages, temperature=0, max_tokens=num_predict,
-            extra_body={"reasoning": {"enabled": reasoning}})  # raciocínio gasta 5–16 mil tokens e trunca
-        usage = response.usage
-        record_llm(usage.prompt_tokens, usage.completion_tokens, getattr(usage, "cost", 0))
-        truncated, text = response.choices[0].finish_reason == "length", response.choices[0].message.content
-    if truncated:
-        raise ValueError("HTML truncado: aumente num-predict e num-ctx.")
-    if not text:
+    response = _client().chat.completions.create(
+        model=model, temperature=0, max_tokens=num_predict,
+        messages=[{"role": "user", "content": f"{BASE_PROMPT}{source}\n\n{content}"}],
+        extra_body={"reasoning": {"enabled": reasoning}})  # raciocínio gasta 5–16 mil tokens e trunca
+    record_llm(response.usage.prompt_tokens, response.usage.completion_tokens, getattr(response.usage, "cost", 0))
+    choice = response.choices[0]
+    if choice.finish_reason == "length":
+        raise ValueError("HTML truncado: aumente num-predict.")
+    if not choice.message.content:
         raise ValueError("O modelo não retornou conteúdo.")
-    return text
+    return choice.message.content
 
 
-def write_html(layout_path, kind, results_dir, engine="direct", model=None, num_ctx=16384, num_predict=8192,
-               reasoning=False):
-    """gera um html final; o anterior vira .previous.html e o log fica nos intermediários."""
+def write_html(layout_path, kind, results_dir, engine="direct", model=None, num_predict=8192, reasoning=False):
+    """gera um html final (engine direct ou openrouter); o log fica nos intermediários."""
     source = source_path(layout_path, kind)
     if not source.is_file():
         print(f"Entrada {kind} ausente: {source}")
         return None
     destination = output_path(layout_path, kind, results_dir)
-    base = layout_path.with_name(destination.name)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    if destination.exists():
-        destination.replace(base.with_suffix(".previous.html"))
     log = {"source": str(source), "engine": engine, "status": "failed"}
     with stage(f"html:{engine}:{kind}") as record:
         try:
             content = prepare_content(kind, source)
             html = (render_source(kind, content) if engine == "direct" else
-                    add_presentation(ask_llm(kind, content, engine, model, num_ctx, num_predict, reasoning)))
+                    add_presentation(ask_llm(kind, content, model or MODEL, num_predict, reasoning)))
             destination.write_text(html, encoding="utf-8")
             if engine != "direct":
-                log.update(model=model or MODELS[engine], tokens_in=record["tokens_in"],
-                           tokens_out=record["tokens_out"], cost_usd=record["cost_usd"])
+                log.update(model=model or MODEL, **{k: record[k] for k in ("tokens_in", "tokens_out", "cost_usd")})
             log["status"] = "accepted"
             print(f"HTML ({kind}): {destination}", flush=True)
         except Exception as exc:
             log["error"] = str(exc)
             print(f"Falha no fluxo {kind} para {source.name}: {exc}", flush=True)
     log["duration_seconds"] = round(record["seconds"], 3)
-    base.with_suffix(".generation.json").write_text(json.dumps(log, ensure_ascii=False, indent=2), encoding="utf-8")
+    layout_path.with_name(destination.name).with_suffix(".generation.json").write_text(
+        json.dumps(log, ensure_ascii=False, indent=2), encoding="utf-8")
     return log

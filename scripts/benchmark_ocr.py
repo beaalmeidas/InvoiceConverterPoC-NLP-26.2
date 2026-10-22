@@ -11,7 +11,7 @@ import sys
 import time
 
 BASE_DIR = Path(__file__).resolve().parents[1]
-sys.path[:0] = [str(BASE_DIR), str(BASE_DIR / "tests")]
+sys.path[:0] = [str(BASE_DIR), str(BASE_DIR / "scripts")]
 from pipeline import result_directories
 from validate_dataset import check_products, recall, unpack_result, visible_text, xml_products
 
@@ -20,9 +20,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--doc-id", default="02-1-padrao-300")
     parser.add_argument("--output", type=Path, default=BASE_DIR / "output" / "ocr-experiments")
-    parser.add_argument("--cases", nargs="+", choices=("baseline-100", "baseline-300", "pt-300", "doc-off-300", "upright-300", "table-crop-300"),
+    parser.add_argument("--cases", nargs="+", choices=("baseline-100", "baseline-300", "pt-300", "doc-off-300", "upright-300"),
                         default=["baseline-100", "baseline-300", "pt-300", "doc-off-300", "upright-300"])
-    parser.add_argument("--crop", nargs=4, type=int, help="recorte em pixels da imagem original para table-crop-300")
     parser.add_argument("--summarize-only", action="store_true")
     args = parser.parse_args()
     dataset = BASE_DIR / "input" / "amostra_diversa"
@@ -30,8 +29,6 @@ def main():
     row = next((r for r in rows if r["doc_id"] == args.doc_id), None)
     if row is None or row["captura_dpi"] != "300" or ";" in row["caminho_imagem"]:
         parser.error("Choose a single-page 300-DPI document in the manifest")
-    if "table-crop-300" in args.cases and not args.crop:
-        parser.error("table-crop-300 requires --crop X1 Y1 X2 Y2")
     output = args.output.resolve()
     report_dir, _ = result_directories(output)
     report_dir.mkdir(parents=True, exist_ok=True)
@@ -42,8 +39,7 @@ def main():
     products = xml_products(dataset / "xml" / (row["xml_id"] + ".xml"))
     settings = {"baseline-100": [], "baseline-300": [], "pt-300": ["--lang", "pt"],
                 "doc-off-300": ["--lang", "pt", "--no-doc-orientation"],
-                "upright-300": ["--lang", "pt", "--no-doc-orientation", "--no-textline-orientation"],
-                "table-crop-300": ["--lang", "pt", "--no-doc-orientation", "--no-textline-orientation", "--crop", *map(str, args.crop or [])]}
+                "upright-300": ["--lang", "pt", "--no-doc-orientation", "--no-textline-orientation"]}
     summaries = []
     for name in args.cases:
         case_dir = output / name
@@ -91,10 +87,9 @@ def main():
         raw = " ".join(data.get("overall_ocr_res", {}).get("rec_texts", []))
         html = "\n".join(str(b.get("block_content") or "") for b in data.get("parsing_res_list", []))
         checks = check_products(products, html)
-        crop = name == "table-crop-300"
-        summaries.append({"case": name, "status": "ok", "scope": "product table only" if crop else "full page",
-                          "raw_recall": None if crop else recall(reference, raw),
-                          "structured_recall": None if crop else recall(reference, visible_text(html)),
+        summaries.append({"case": name, "status": "ok",
+                          "raw_recall": recall(reference, raw),
+                          "structured_recall": recall(reference, visible_text(html)),
                           "raw_to_structure_coverage": recall(raw, visible_text(html)),
                           "exact_product_rows": sum(c["row_exact"] for c in checks), "product_count": len(products),
                           "product_checks": checks,
@@ -102,8 +97,7 @@ def main():
         # salva os resultados após cada caso
         (report_dir / "comparison.json").write_text(json.dumps(summaries, ensure_ascii=False, indent=2), encoding="utf-8")
     lines = ["# Controlled OCR comparison", "", f"Invoice: `{args.doc_id}`; XML: `{row['xml_id']}`.", "",
-             "100 DPI is downsampled from this same 300-DPI image. Other settings change one at a time.",
-             "Cropped-table results are not scored against the whole page.", "",
+             "100 DPI is downsampled from this same 300-DPI image. Other settings change one at a time.", "",
              "| Case | Raw recall | Structured recall | Exact product rows |", "|---|---:|---:|---:|"]
     for s in summaries:
         if s["status"] != "ok":
