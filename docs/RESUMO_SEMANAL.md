@@ -69,3 +69,11 @@ Foi feito:
 - Enxuguei o `pipeline.py`, tirando o Ollama e opções que ninguém usava.
 - Organizei o repositório: apaguei arquivos soltos e docs repetidos, movi o `validate_dataset.py` para `scripts/` e atualizei o `.gitignore`.
 - Não consegui testar o modelo lendo a imagem direto: o Qwen gratuito saiu do OpenRouter e o Gemma gratuito estava sem cota.
+
+## Semana 6 — 26/10 em diante
+
+Foi feito:
+
+- A orientação de linha do OCR também ficou desligada por padrão no `pipeline.py` e no `main.py`, igual ao notebook.
+- O modelo padrão passou a ser o `qwen/qwen3.8-27b` pago, já que a versão gratuita saiu do OpenRouter.
+- Tirei as referências ao Ollama que sobraram na documentação e no `validate_dataset.py`.

@@ -13,7 +13,9 @@ Os JSONs, recortes e logs ficam em `output/intermediarios/output-sintetico/`.
 Para processar todas as notas, troque `--limit 1` por `--limit 0`.
 
 O OCR usa português, prioriza capturas de 300 dpi e reconstrói células pelas
-bordas da nota. A geração padrão de HTML dispensa Ollama.
+bordas da nota. A orientação de linha fica desligada (`--textline-orientation` liga):
+ligada, ela girava linhas das notas em paisagem e o OCR lia lixo. A geração padrão
+de HTML (`--engine direct`) não usa LLM.
 
 ## Usar suas próprias notas
 
@@ -45,8 +47,11 @@ As próximas execuções usam normalmente `output/html/` e `output/intermediario
 Com a chave em `OPENROUTER_API_KEY` ou no `.env`:
 
 ```bash
-python main.py html --engine openrouter --model qwen/qwen3.8-27b:free
+python main.py html --engine openrouter --model qwen/qwen3.8-27b
 ```
+
+O Qwen3.8 é pago (US$ 0,20 por milhão de tokens de entrada e US$ 2,50 de saída); a versão
+`:free` saiu da OpenRouter. O custo de cada chamada aparece nas métricas.
 
 O raciocínio do modelo fica desligado: ligado (`--reasoning`), o Qwen3.8 gastou
 5–16 mil tokens pensando e truncou o HTML. Respostas truncadas ou vazias são rejeitadas.
@@ -65,8 +70,11 @@ instalação e rode tudo de novo. A última célula baixa `output/` e `runs/` nu
 
 ## Código
 
-`pipeline.py` tem OCR, tabelas, HTML (direto, Ollama ou OpenRouter) e métricas;
+`pipeline.py` tem OCR, tabelas, HTML (direto ou OpenRouter) e métricas;
 `main.py` é só a linha de comando. O registro de OCR guarda apenas status e recorte.
 Testes: `python -m unittest discover tests`.
+
+Avaliação contra os gabaritos do dataset sintético: `python scripts/avaliar.py`
+(relatório em `output/avaliacao/`).
 
 [Alterações e medições anteriores](otimizacao.md)
