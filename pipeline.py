@@ -17,7 +17,7 @@ BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = BASE_DIR / "output"
 RUNS_DIR = BASE_DIR / "runs"
 SUPPORTED_INPUTS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".pdf"}
-MODEL = "qwen/qwen3.8-27b:free"
+MODEL = "qwen/qwen3.8-27b"  # a versão :free saiu da openrouter
 HTML_SUFFIX = {"compact": "_html.html", "markdown": "_from_md_html.html", "full_json": "_from_full_json_html.html"}
 
 # ---------- métricas ----------
@@ -110,7 +110,8 @@ def select_inputs(root, dpi=None, limit=0):
     return files[:limit] if limit else files
 
 
-def load_engine(lang="pt", doc_orientation=True, textline_orientation=True, det_max_side=1280, cpu_threads=2):
+# textline_orientation=False: ligado, gira por engano linhas das notas em paisagem e o ocr lê lixo
+def load_engine(lang="pt", doc_orientation=True, textline_orientation=False, det_max_side=1280, cpu_threads=2):
     from paddleocr import PPStructureV3
 
     return PPStructureV3(

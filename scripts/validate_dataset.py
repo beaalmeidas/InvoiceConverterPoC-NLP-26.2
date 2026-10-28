@@ -132,7 +132,7 @@ def source_html(kind, content):
 
 def validate_response(raw, reference, reason):
     if reason == "length":
-        raise ValueError("Ollama atingiu o limite de geração (done_reason=length).")
+        raise ValueError("LLM atingiu o limite de geração (finish_reason=length).")
     result = inspect_html(raw)
     if result.stack or result.errors:
         raise ValueError("HTML incompleto ou com tags fora de ordem.")

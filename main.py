@@ -63,7 +63,7 @@ def main(argv=None):
     ocr.add_argument("--det-max-side", type=int, default=1280)
     ocr.add_argument("--cpu-threads", type=int, default=2)
     ocr.add_argument("--doc-orientation", action=argparse.BooleanOptionalAction, default=True)
-    ocr.add_argument("--textline-orientation", action=argparse.BooleanOptionalAction, default=True)
+    ocr.add_argument("--textline-orientation", action=argparse.BooleanOptionalAction, default=False)
     ocr.add_argument("--ruled-tables", action=argparse.BooleanOptionalAction, default=True)
     html = commands.add_parser("html", help="html a partir do ocr")
     html.add_argument("--engine", choices=("direct", "openrouter"), default="direct",
