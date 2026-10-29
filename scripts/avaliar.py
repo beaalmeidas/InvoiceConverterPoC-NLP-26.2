@@ -1,7 +1,8 @@
 """avalia P1 (llm vs direto), P2 (representação), P3 (ruled_table vs paddle) e atribui erros por etapa.
 
   python scripts/avaliar.py                    → output/avaliacao/relatorio.md e metricas.json
-  python scripts/avaliar.py --gerar MODELO     → antes, gera as 5 condições com um mesmo llm (openrouter)
+  python scripts/avaliar.py --gerar MODELO [--engine ollama]
+      → antes, gera as 5 condições com um mesmo llm (openrouter por padrão; ollama: qwen2.5vl:7b local)
 """
 from collections import Counter
 from decimal import Decimal
@@ -24,9 +25,8 @@ NATIVE_DIR = OUT / "paddle-nativo"                                # ocr com --no
 GEN_DIR = OUT / "llm"
 KINDS = {"compact": "JSON blocos", "markdown": "Markdown", "full_json": "JSON completo"}
 LABELS = {**KINDS, "lines": "Linhas OCR + bbox", "image": "Imagem (VLM)"}
-SOURCES = {"lines": "Input: OCR text lines as JSON [{t: text, b: [x1,y1,x2,y2] pixels}]. Use b only to rebuild rows, "
-                    "columns and tables; hide coordinates.",
-           "image": "Input: image of a Brazilian invoice (DANFE). Transcribe every printed text exactly."}
+LINES_SOURCE = ("Input: OCR text lines as JSON [{t: text, b: [x1,y1,x2,y2] pixels}]. Use b only to rebuild rows, "
+                "columns and tables; hide coordinates.")
 MANIFEST = {r["doc_id"]: r for r in csv.DictReader((DATASET_DIR / "manifesto.csv").open(encoding="utf-8-sig"))}
 METRICS = ["recall", "precision", "fields", "rows", "cell_f1"]
 STAGES = ["ok", "ocr", "montagem", "geração"]
@@ -101,7 +101,7 @@ def outputs(layout):
         yield "direct", kind, pipeline.render_source(kind, content), {}
         path = pipeline.output_path(layout, kind, LLM_DIR)
         log = json.loads(layout.with_name(path.name).with_suffix(".generation.json").read_text())
-        if log.get("engine") == "openrouter" and path.is_file():
+        if log.get("engine") in pipeline.LLM_URLS and path.is_file():
             yield log["model"], kind, path.read_text(encoding="utf-8"), {
                 "tokens_in": log["tokens_in"], "tokens_out": log["tokens_out"], "seconds": log["duration_seconds"]}
     for path in sorted(GEN_DIR.glob(f"*/{layout.parent.parent.name}/*.html")):
@@ -127,36 +127,28 @@ def native_and_ruled(folder):
     return native, pipeline.render_source("compact", json.dumps(blocks)), repaired
 
 
-def generate(model):
+def generate(model, engine="openrouter"):
     """mesmo llm para as 5 entradas; pula o que já existe. falhas ficam no .json ao lado."""
-    import base64
-
-    client = pipeline._client()
     for layout in sorted(pipeline.result_directories(LLM_DIR)[0].rglob("*_layout.json")):
         res = json.loads(pipeline.source_path(layout, "full_json").read_text(encoding="utf-8"))
         ocr = res["overall_ocr_res"]
         lines = json.dumps([{"t": t, "b": b} for t, b in zip(ocr["rec_texts"], ocr["rec_boxes"])],
                            ensure_ascii=False, separators=(",", ":"))
-        image = base64.b64encode(Path(res["input_path"]).read_bytes()).decode()
         for kind in LABELS:
-            dest = GEN_DIR / model.replace("/", "_") / layout.parent.parent.name / f"{kind}.html"
+            dest = GEN_DIR / model.replace("/", "_").replace(":", "_") / layout.parent.parent.name / f"{kind}.html"
             if dest.is_file():
                 continue
             dest.parent.mkdir(parents=True, exist_ok=True)
-            log = {"model": model, "kind": kind}
+            log = {"model": model, "engine": engine, "kind": kind}
             with pipeline.stage(f"avaliacao:{kind}") as record:
                 try:
                     if kind in KINDS:
-                        text = pipeline.ask_llm(kind, pipeline.prepare_content(kind, pipeline.source_path(layout, kind)), model)
+                        source = pipeline.prepare_content(kind, pipeline.source_path(layout, kind))
+                        text = pipeline.ask_llm(kind, source, model, engine=engine)
+                    elif kind == "lines":
+                        text = pipeline._ask(engine, model, f"{pipeline.BASE_PROMPT}{LINES_SOURCE}\n\n{lines}")
                     else:
-                        extra = ({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image}"}}
-                                 if kind == "image" else {"type": "text", "text": lines})
-                        r = client.chat.completions.create(model=model, temperature=0, max_tokens=8192, messages=[
-                            {"role": "user", "content": [{"type": "text", "text": pipeline.BASE_PROMPT + SOURCES[kind]}, extra]}])
-                        pipeline.record_llm(r.usage.prompt_tokens, r.usage.completion_tokens, getattr(r.usage, "cost", 0))
-                        text = r.choices[0].message.content
-                        if r.choices[0].finish_reason == "length" or not text:
-                            raise ValueError(f"resposta truncada ou vazia ({r.choices[0].finish_reason})")
+                        text = pipeline.ask_vlm(res["input_path"], model, engine=engine)
                     dest.write_text(pipeline.add_presentation(text), encoding="utf-8")
                     log["status"] = "accepted"
                 except Exception as exc:
@@ -185,8 +177,9 @@ def evaluate():
         doc_id = layout.parent.parent.name
         g, lines = gold(doc_id), json.loads(pipeline.source_path(layout, "full_json").read_text())["overall_ocr_res"]["rec_texts"]
         ocr = " ".join(lines)
+        ocr_seconds = json.loads((layout.parent / "ocr_run.json").read_text()).get("seconds", float("nan"))
         raw = score(g, f"<p>{ocr}</p>")
-        rows.append({"doc": doc_id, "condition": "Linhas OCR (texto bruto)", "engine": "ocr",
+        rows.append({"doc": doc_id, "condition": "Linhas OCR (texto bruto)", "engine": "ocr", "total_seconds": ocr_seconds,
                      **{k: raw[k] for k in ("recall", "precision", "fields")}})
         direct = {}
         for engine, kind, html, cost in outputs(layout):
@@ -195,7 +188,9 @@ def evaluate():
                 direct[kind] = s
             rep_text = read_source_text(pipeline.source_path(layout, kind), kind) if kind in KINDS else ocr
             blame = attribute(g, None if kind == "image" else lines, rep_text, direct.get(kind), s)
-            rows.append({"doc": doc_id, "condition": LABELS[kind], "engine": engine, **cost, **{k: blame[k] for k in STAGES},
+            total = cost.get("seconds", 0) + (0 if kind == "image" else ocr_seconds)
+            rows.append({"doc": doc_id, "condition": LABELS[kind], "engine": engine, "total_seconds": total,
+                         **cost, **{k: blame[k] for k in STAGES},
                          **{k: v for k, v in s.items() if not k.startswith("_")},
                          **(hallucination(ocr, s["_text"]) if engine != "direct" and kind != "image" else {})})
     p3 = []
@@ -230,6 +225,8 @@ def main():
             for r in df.dropna(subset=["aluc_exemplos"]).itertuples()),
           "", "## Custo LLM por chamada (médias)", "",
           *markdown(llm[["tokens_in", "tokens_out", "seconds"]].mean().round(1)),
+          "", "## Tempo total por caminho (s, média por nota; OCR + LLM, o VLM não passa pelo OCR)", "",
+          *markdown(by[["total_seconds"]].mean().round(1)),
           "", "## P3 — ruled_table vs HTML do Paddle", "",
           *markdown(p3.groupby("condition")[METRICS[:1] + METRICS[2:] + ["cells_ratio"]].mean().round({"cells_ratio": 2}), METRICS[:1] + METRICS[2:]),
           "", *markdown(pair, list(pair.columns))]
@@ -239,5 +236,6 @@ def main():
 
 if __name__ == "__main__":
     if "--gerar" in sys.argv:
-        generate(sys.argv[sys.argv.index("--gerar") + 1])
+        engine = sys.argv[sys.argv.index("--engine") + 1] if "--engine" in sys.argv else "openrouter"
+        generate(sys.argv[sys.argv.index("--gerar") + 1], engine)
     main()

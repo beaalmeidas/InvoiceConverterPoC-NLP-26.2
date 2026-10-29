@@ -1,7 +1,7 @@
 """ocr de notas fiscais e geração de html.
 
-  python main.py ocr  [--limit 1]               → output/intermediarios/...
-  python main.py html [--engine openrouter]     → output/html/...
+  python main.py ocr  [--input PASTA_OU_ZIP] [--limit 1] → output/intermediarios/...
+  python main.py html [--engine openrouter|ollama] → output/html/...
 """
 from pathlib import Path
 import argparse
@@ -14,6 +14,8 @@ INPUT_DIR = pipeline.BASE_DIR / "input" / "amostra_diversa" / "captura"
 
 def run_ocr(parser, args):
     args.input = args.input.resolve()
+    if args.input.suffix.lower() == ".zip":  # extrai e processa a pasta; as saídas ficam como de uma pasta
+        args.input = pipeline.extract_zip(args.input, pipeline.OUTPUT_DIR / "entradas" / args.input.stem)
     if args.limit < 0 or args.min_width < 0 or args.det_max_side < 32 or args.cpu_threads < 1:
         parser.error("limit e min-width devem ser >= 0; det-max-side >= 32; cpu-threads >= 1")
     if args.file:
@@ -66,9 +68,9 @@ def main(argv=None):
     ocr.add_argument("--textline-orientation", action=argparse.BooleanOptionalAction, default=False)
     ocr.add_argument("--ruled-tables", action=argparse.BooleanOptionalAction, default=True)
     html = commands.add_parser("html", help="html a partir do ocr")
-    html.add_argument("--engine", choices=("direct", "openrouter"), default="direct",
-                      help="direct preserva o ocr; openrouter usa um llm")
-    html.add_argument("--model", help=f"padrão: {pipeline.MODEL}")
+    html.add_argument("--engine", choices=("direct", *pipeline.LLM_URLS), default="direct",
+                      help="direct preserva o ocr; openrouter (pago) e ollama (local) usam um llm")
+    html.add_argument("--model", help=f"padrão: {pipeline.MODELS}")
     html.add_argument("--output", "--results-dir", type=Path, default=RESULTS_DIR)
     html.add_argument("--limit", type=int, default=0, help="máximo de páginas; 0 = todas")
     html.add_argument("--num-predict", type=int, default=8192)

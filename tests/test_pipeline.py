@@ -1,3 +1,4 @@
+from base64 import b64decode
 import json
 from pathlib import Path
 import sys
@@ -25,6 +26,13 @@ def fake_openrouter(content, finish_reason="stop"):
         choices=[SimpleNamespace(finish_reason=finish_reason, message=SimpleNamespace(content=content))],
         usage=SimpleNamespace(prompt_tokens=100, completion_tokens=40, cost=0.002))
     return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=lambda **kwargs: response)))
+
+
+def recording_client(calls):
+    """cliente falso que guarda os argumentos de cada chamada."""
+    response = fake_openrouter("<p>Nota</p>").chat.completions.create()
+    return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(
+        create=lambda **kwargs: calls.append(kwargs) or response)))
 
 
 class MetricsTests(unittest.TestCase):
@@ -205,7 +213,7 @@ class HtmlTests(unittest.TestCase):
 
 class OpenRouterTests(unittest.TestCase):
     def test_response_and_usage_are_recorded(self):
-        with patch.object(pipeline, "_client", lambda: fake_openrouter("```html\n<p>Nota</p>\n```")), \
+        with patch.object(pipeline, "_client", lambda *_: fake_openrouter("```html\n<p>Nota</p>\n```")), \
              pipeline.stage("llm") as record:
             html = pipeline.ask_llm("compact", "[]")
         pipeline.records.clear()
@@ -215,8 +223,57 @@ class OpenRouterTests(unittest.TestCase):
     def test_truncated_or_empty_response_fails(self):
         for content, reason in (("<p>Nota", "length"), (None, "stop")):
             with self.subTest(reason=reason), self.assertRaises(ValueError), \
-                 patch.object(pipeline, "_client", lambda: fake_openrouter(content, reason)):
+                 patch.object(pipeline, "_client", lambda *_: fake_openrouter(content, reason)):
                 pipeline.ask_llm("compact", "[]")
+
+    def test_ollama_sends_no_reasoning(self):
+        calls = []
+        with patch.object(pipeline, "_client", lambda *_: recording_client(calls)):
+            pipeline.ask_llm("compact", "[]", engine="ollama")
+        pipeline.records.clear()
+        self.assertEqual((calls[0]["model"], calls[0]["extra_body"]), (pipeline.MODELS["ollama"], None))
+
+    def test_vlm_image_is_reduced_png(self):
+        calls = []
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / "nota.jpg"
+            cv2.imwrite(str(path), np.full((3200, 2000, 3), 255, np.uint8))
+            with patch.object(pipeline, "_client", lambda *_: recording_client(calls)):
+                pipeline.ask_vlm(path, engine="ollama")
+        pipeline.records.clear()
+        url = calls[0]["messages"][0]["content"][1]["image_url"]["url"]
+        self.assertTrue(url.startswith("data:image/png;base64,"))
+        image = cv2.imdecode(np.frombuffer(b64decode(url.split(",", 1)[1]), np.uint8), cv2.IMREAD_COLOR)
+        self.assertEqual(max(image.shape[:2]), pipeline.VLM_MAX_SIDE)
+
+
+class ZipInputTests(unittest.TestCase):
+    def test_zip_is_extracted_without_macos_metadata(self):
+        import zipfile
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            archive = root / "notas.zip"
+            with zipfile.ZipFile(archive, "w") as zf:
+                zf.writestr("sub/p01.png", b"x")
+                zf.writestr("__MACOSX/._p01.png", b"x")
+            extracted = pipeline.extract_zip(archive, root / "entradas")
+            self.assertEqual(sorted(p.relative_to(extracted).as_posix() for p in extracted.rglob("*") if p.is_file()),
+                             ["sub/p01.png"])
+
+    def test_cli_accepts_zip_as_input(self):
+        import zipfile
+        seen = []
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            archive = root / "notas.zip"
+            with zipfile.ZipFile(archive, "w") as zf:
+                zf.writestr("p01.png", b"x")
+            with patch.object(pipeline, "OUTPUT_DIR", root / "output"), \
+                 patch.object(pipeline, "load_engine", lambda *args: None), \
+                 patch.object(pipeline, "process_file", lambda engine, path, input_root, output, *a: seen.append(path) or (path, "ok")):
+                main.main(["ocr", "--input", str(archive)])
+            self.assertEqual([p.name for p in seen], ["p01.png"])
+            self.assertTrue(str(seen[0]).startswith(str(root / "output" / "entradas")))
 
 
 class EndToEndTests(unittest.TestCase):
@@ -248,13 +305,13 @@ class EndToEndTests(unittest.TestCase):
                 main.main(["ocr", "--input", str(inputs), "--output", str(outputs), "--min-width", "0",
                            "--no-ruled-tables"])
                 main.main(["html", "--output", str(outputs)])
-                with patch.object(pipeline, "_client", lambda: fake_openrouter(table)):
+                with patch.object(pipeline, "_client", lambda *_: fake_openrouter(table)):
                     main.main(["html", "--output", str(outputs), "--engine", "openrouter"])
             intermediate, html = pipeline.result_directories(outputs)
             self.assertEqual(len(list(html.rglob("*.html"))), 3)
             self.assertFalse(list(html.rglob("*.json")))
             log = json.loads((intermediate / "p01_png/p01_page_001_html.generation.json").read_text())
-            self.assertEqual((log["status"], log["model"], log["tokens_in"]), ("accepted", pipeline.MODEL, 100))
+            self.assertEqual((log["status"], log["model"], log["tokens_in"]), ("accepted", pipeline.MODELS["openrouter"], 100))
             self.assertTrue((intermediate / "p01_png/ocr_run.json").exists())
             self.assertEqual(len(list((root / "runs").glob("metrics_*.json"))), 3)
 

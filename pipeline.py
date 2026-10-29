@@ -17,7 +17,10 @@ BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = BASE_DIR / "output"
 RUNS_DIR = BASE_DIR / "runs"
 SUPPORTED_INPUTS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".pdf"}
-MODEL = "qwen/qwen3.8-27b"  # a versão :free saiu da openrouter
+LLM_URLS = {"openrouter": "https://openrouter.ai/api/v1", "ollama": "http://localhost:11434/v1"}
+MODELS = {"openrouter": "qwen/qwen3.8-27b",  # pago; a versão :free saiu da openrouter
+          "ollama": "qwen2.5vl:7b"}  # roda na gpu do colab, sem custo
+VLM_MAX_SIDE = 1600  # o qwen2.5-vl gasta ~1 token por 28×28 px; a captura de 300 dpi estoura o contexto
 HTML_SUFFIX = {"compact": "_html.html", "markdown": "_from_md_html.html", "full_json": "_from_full_json_html.html"}
 
 # ---------- métricas ----------
@@ -87,6 +90,16 @@ def report(label="pipeline"):
 # ---------- ocr ----------
 
 
+def extract_zip(archive_path, destination):
+    """extrai um zip de notas (ignora o __MACOSX do mac) e devolve a pasta extraída."""
+    import zipfile
+
+    destination.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(archive_path) as archive:
+        archive.extractall(destination, [m for m in archive.namelist() if not m.startswith("__MACOSX")])
+    return destination
+
+
 def result_directories(results_dir):
     """separa intermediários e htmls finais em output/intermediarios e output/html."""
     root = Path(results_dir).resolve()
@@ -111,6 +124,7 @@ def select_inputs(root, dpi=None, limit=0):
 
 
 # textline_orientation=False: ligado, gira por engano linhas das notas em paisagem e o ocr lê lixo
+# (campos 66,7% → 88,9% na nota 02-1-cinza-300, mesmo tempo)
 def load_engine(lang="pt", doc_orientation=True, textline_orientation=False, det_max_side=1280, cpu_threads=2):
     from paddleocr import PPStructureV3
 
@@ -150,7 +164,7 @@ def process_file(engine, input_path, input_root, output, min_width=1600, ruled_t
     relative = input_path.relative_to(input_root)
     folder = result_directories(output)[0] / relative.parent / f"{input_path.stem}_{input_path.suffix[1:].lower()}"
     folder.mkdir(parents=True, exist_ok=True)
-    status = "ok"
+    status, started = "ok", time.perf_counter()
     try:
         source = input_path
         if input_path.suffix.lower() != ".pdf":
@@ -173,7 +187,8 @@ def process_file(engine, input_path, input_root, output, min_width=1600, ruled_t
     except Exception as exc:
         status = "failed"
         print(f"Falha em {input_path.name}: {exc}", flush=True)
-    (folder / "ocr_run.json").write_text(json.dumps({"status": status}), encoding="utf-8")
+    (folder / "ocr_run.json").write_text(json.dumps({"status": status, "seconds": round(time.perf_counter() - started, 3)}),
+                                         encoding="utf-8")
     return folder, status
 
 # ---------- tabelas pelas bordas visíveis ----------
@@ -402,21 +417,21 @@ def add_presentation(html):
 
 
 @cache
-def _client():
+def _client(engine="openrouter"):
     from dotenv import load_dotenv
     from openai import OpenAI
 
     load_dotenv(BASE_DIR / ".env")
-    return OpenAI(base_url="https://openrouter.ai/api/v1", api_key=os.environ["OPENROUTER_API_KEY"], max_retries=5)
+    key = os.environ["OPENROUTER_API_KEY"] if engine == "openrouter" else "ollama"  # o ollama ignora a chave
+    return OpenAI(base_url=LLM_URLS[engine], api_key=key, max_retries=5)
 
 
-def ask_llm(kind, content, model=MODEL, num_predict=8192, reasoning=False):
-    source = ("Input: PaddleOCR Markdown with HTML tables." if kind == "markdown" else
-              "Input: OCR JSON blocks. Use content as text/table markup, type as label, bbox for layout only; hide coordinates.")
-    response = _client().chat.completions.create(
-        model=model, temperature=0, max_tokens=num_predict,
-        messages=[{"role": "user", "content": f"{BASE_PROMPT}{source}\n\n{content}"}],
-        extra_body={"reasoning": {"enabled": reasoning}})  # raciocínio gasta 5–16 mil tokens e trunca
+def _ask(engine, model, content, num_predict=8192, reasoning=False):
+    """uma chamada de chat; content é texto ou lista de partes (texto e imagem)."""
+    response = _client(engine).chat.completions.create(
+        model=model, temperature=0, max_tokens=num_predict, messages=[{"role": "user", "content": content}],
+        # raciocínio gasta 5–16 mil tokens e trunca; o ollama não conhece o campo
+        extra_body={"reasoning": {"enabled": reasoning}} if engine == "openrouter" else None)
     record_llm(response.usage.prompt_tokens, response.usage.completion_tokens, getattr(response.usage, "cost", 0))
     choice = response.choices[0]
     if choice.finish_reason == "length":
@@ -426,8 +441,30 @@ def ask_llm(kind, content, model=MODEL, num_predict=8192, reasoning=False):
     return choice.message.content
 
 
+def ask_llm(kind, content, model=None, num_predict=8192, reasoning=False, engine="openrouter"):
+    source = ("Input: PaddleOCR Markdown with HTML tables." if kind == "markdown" else
+              "Input: OCR JSON blocks. Use content as text/table markup, type as label, bbox for layout only; hide coordinates.")
+    return _ask(engine, model or MODELS[engine], f"{BASE_PROMPT}{source}\n\n{content}", num_predict, reasoning)
+
+
+def ask_vlm(image_path, model=None, num_predict=8192, engine="openrouter"):
+    """html direto da imagem, sem ocr; a imagem vai reduzida a VLM_MAX_SIDE e em png."""
+    import base64
+    import cv2
+
+    image = cv2.imread(str(image_path))
+    if image is None:
+        raise ValueError(f"Imagem ilegível (pdf não é aceito pelo vlm): {image_path}")
+    if (scale := VLM_MAX_SIDE / max(image.shape[:2])) < 1:
+        image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+    data = base64.b64encode(cv2.imencode(".png", image)[1]).decode()
+    return _ask(engine, model or MODELS[engine], [
+        {"type": "text", "text": f"{BASE_PROMPT}Input: image of a Brazilian invoice (DANFE). Transcribe every printed text exactly."},
+        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{data}"}}], num_predict)
+
+
 def write_html(layout_path, kind, results_dir, engine="direct", model=None, num_predict=8192, reasoning=False):
-    """gera um html final (engine direct ou openrouter); o log fica nos intermediários."""
+    """gera um html final (engine direct, openrouter ou ollama); o log fica nos intermediários."""
     source = source_path(layout_path, kind)
     if not source.is_file():
         print(f"Entrada {kind} ausente: {source}")
@@ -439,10 +476,10 @@ def write_html(layout_path, kind, results_dir, engine="direct", model=None, num_
         try:
             content = prepare_content(kind, source)
             html = (render_source(kind, content) if engine == "direct" else
-                    add_presentation(ask_llm(kind, content, model or MODEL, num_predict, reasoning)))
+                    add_presentation(ask_llm(kind, content, model, num_predict, reasoning, engine)))
             destination.write_text(html, encoding="utf-8")
             if engine != "direct":
-                log.update(model=model or MODEL, **{k: record[k] for k in ("tokens_in", "tokens_out", "cost_usd")})
+                log.update(model=model or MODELS[engine], **{k: record[k] for k in ("tokens_in", "tokens_out", "cost_usd")})
             log["status"] = "accepted"
             print(f"HTML ({kind}): {destination}", flush=True)
         except Exception as exc:
