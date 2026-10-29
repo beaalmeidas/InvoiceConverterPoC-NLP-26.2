@@ -1,54 +1,86 @@
-from paddleocr import PPStructureV3
+"""ocr de notas fiscais e geração de html.
+
+  python main.py ocr  [--input PASTA_OU_ZIP] [--limit 1] → output/intermediarios/...
+  python main.py html [--engine openrouter|ollama] → output/html/...
+"""
 from pathlib import Path
-import json
+import argparse
 
-BASE_DIR = Path(__file__).resolve().parent
-OUTPUT_DIR = BASE_DIR / "output"
+import pipeline
 
-# transforma output numa saída menor e mais fácil de se usar/manipular 
-# com intuito de averiguar melhoria na extração se o json tiver simplificado
-def simplify_result(res):
-    result = res.json
-
-    blocks = result["res"].get("parsing_res_list", [])
-
-    # pega apenas blocos estruturais essenciais do json ao invés de todo o conteúdo
-    return [
-        {
-            "type": block.get("block_label"),
-            "bbox": block.get("block_bbox"),
-            "content": block.get("block_content"),
-        }
-        for block in blocks
-    ]
+RESULTS_DIR = pipeline.OUTPUT_DIR / "output-sintetico"
+INPUT_DIR = pipeline.BASE_DIR / "input" / "amostra_diversa" / "captura"
 
 
-pipeline = PPStructureV3(
-    use_doc_orientation_classify=False,
-    use_doc_unwarping=False,
-    enable_mkldnn=False,
-    # minha cpu tava atingindo 100$ da capacidade ai reduzi o paralelismo pro codigo rodar mais levinho
-    cpu_threads=2,
+def run_ocr(parser, args):
+    args.input = args.input.resolve()
+    if args.input.suffix.lower() == ".zip":  # extrai e processa a pasta; as saídas ficam como de uma pasta
+        args.input = pipeline.extract_zip(args.input, pipeline.OUTPUT_DIR / "entradas" / args.input.stem)
+    if args.limit < 0 or args.min_width < 0 or args.det_max_side < 32 or args.cpu_threads < 1:
+        parser.error("limit e min-width devem ser >= 0; det-max-side >= 32; cpu-threads >= 1")
+    if args.file:
+        files = [args.file.resolve()]
+        if not files[0].is_file() or files[0].suffix.lower() not in pipeline.SUPPORTED_INPUTS:
+            parser.error("--file deve ser uma imagem ou PDF existente")
+        if not files[0].is_relative_to(args.input):
+            parser.error("--file deve estar dentro de --input")
+    else:
+        files = pipeline.select_inputs(args.input, args.dpi, args.limit)
+    if not files:
+        raise FileNotFoundError(f"Nenhuma imagem ou PDF encontrado em {args.input}")
+    with pipeline.stage("ocr:carregar_modelo"):
+        engine = pipeline.load_engine(args.lang, args.doc_orientation, args.textline_orientation,
+                                      args.det_max_side, args.cpu_threads)
+    failures = 0
+    for path in files:
+        print(f"Processando: {path.name}", flush=True)
+        failures += pipeline.process_file(engine, path, args.input, args.output, args.min_width,
+                                          args.ruled_tables)[1] != "ok"
+    return failures
 
-    # desliga outros módulos do ppstructurev3 pra otimizar o processamento
-    use_formula_recognition=False,
-    use_chart_recognition=False,
-    use_seal_recognition=False,
-    use_table_recognition=True,
-)
 
-output = pipeline.predict(str(BASE_DIR / "input" / "img_1.jpg"))
+def run_html(parser, args):
+    if args.limit < 0 or args.num_predict < 1:
+        parser.error("limit deve ser >= 0 e num-predict > 0")
+    layouts = sorted(pipeline.result_directories(args.output)[0].rglob("*_layout.json"))
+    layouts = layouts[:args.limit] if args.limit else layouts
+    if not layouts:
+        raise FileNotFoundError(f"Nenhum JSON compacto encontrado em {args.output}. Rode `main.py ocr` primeiro.")
+    logs = [pipeline.write_html(layout, kind, args.output, args.engine, args.model, args.num_predict, args.reasoning)
+            for layout in layouts for kind in pipeline.HTML_SUFFIX]
+    return sum(log is not None and log["status"] != "accepted" for log in logs)
 
-OUTPUT_DIR.mkdir(exist_ok=True)
 
-for i, res in enumerate(output):
-    res.save_to_json(save_path=str(OUTPUT_DIR))
-    res.save_to_markdown(save_path=str(OUTPUT_DIR))
-    res.save_to_html(save_path=str(OUTPUT_DIR))
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    commands = parser.add_subparsers(dest="command", required=True)
+    ocr = commands.add_parser("ocr", help="ocr em lote")
+    ocr.add_argument("--input", type=Path, default=INPUT_DIR)
+    ocr.add_argument("--output", type=Path, default=RESULTS_DIR)
+    ocr.add_argument("--file", type=Path)
+    ocr.add_argument("--limit", type=int, default=5, help="máximo de arquivos; 0 = todos")
+    ocr.add_argument("--lang", choices=("default", "pt"), default="pt")
+    ocr.add_argument("--dpi", type=int, choices=(100, 150, 200, 300))
+    ocr.add_argument("--min-width", type=int, default=1600)
+    ocr.add_argument("--det-max-side", type=int, default=1280)
+    ocr.add_argument("--cpu-threads", type=int, default=2)
+    ocr.add_argument("--doc-orientation", action=argparse.BooleanOptionalAction, default=True)
+    ocr.add_argument("--textline-orientation", action=argparse.BooleanOptionalAction, default=False)
+    ocr.add_argument("--ruled-tables", action=argparse.BooleanOptionalAction, default=True)
+    html = commands.add_parser("html", help="html a partir do ocr")
+    html.add_argument("--engine", choices=("direct", *pipeline.LLM_URLS), default="direct",
+                      help="direct preserva o ocr; openrouter (pago) e ollama (local) usam um llm")
+    html.add_argument("--model", help=f"padrão: {pipeline.MODELS}")
+    html.add_argument("--output", "--results-dir", type=Path, default=RESULTS_DIR)
+    html.add_argument("--limit", type=int, default=0, help="máximo de páginas; 0 = todas")
+    html.add_argument("--num-predict", type=int, default=8192)
+    html.add_argument("--reasoning", action="store_true", help="openrouter: liga o raciocínio (risco de truncar)")
+    args = parser.parse_args(argv)
+    failures = (run_ocr if args.command == "ocr" else run_html)(parser, args)
+    pipeline.report(args.command)
+    if failures:
+        raise SystemExit(1)
 
-    # versão limpa pra testar e ver se há ganho de desempenho
-    simplified = simplify_result(res)
 
-    with open(OUTPUT_DIR / f"img_{i}_layout.json", "w",encoding="utf-8"
-    ) as f:
-        json.dump(simplified, f, ensure_ascii=False, indent=2)
+if __name__ == "__main__":
+    main()
