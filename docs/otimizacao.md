@@ -1,7 +1,7 @@
 # Simplificação da pipeline de OCR e HTML
 
-> Registro histórico. Na semana 5 o Ollama saiu do `pipeline.py` e o LLM passou a ser
-> só via OpenRouter (`--engine openrouter`). Veja o [fluxo atual](FLUXO.md).
+> Registro histórico. Na semana 5 o cliente Ollama descrito aqui saiu do `pipeline.py`; na
+> semana 6 o Ollama voltou pelo mesmo cliente da OpenRouter (`--engine ollama`). Veja o [fluxo atual](FLUXO.md).
 
 O objetivo foi aproximar o código do fluxo original: selecionar arquivos,
 carregar o PaddleOCR uma vez, processar o lote e salvar as saídas. O `main.py`

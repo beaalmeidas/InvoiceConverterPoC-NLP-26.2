@@ -70,10 +70,23 @@ Foi feito:
 - Organizei o repositório: apaguei arquivos soltos e docs repetidos, movi o `validate_dataset.py` para `scripts/` e atualizei o `.gitignore`.
 - Não consegui testar o modelo lendo a imagem direto: o Qwen gratuito saiu do OpenRouter e o Gemma gratuito estava sem cota.
 
-## Semana 6 — 26/10 em diante
+## Semana 6 — 25/10 a 28/10
 
-Foi feito:
+Foi feito (Larissa):
 
-- A orientação de linha do OCR também ficou desligada por padrão no `pipeline.py` e no `main.py`, igual ao notebook.
-- O modelo padrão passou a ser o `qwen/qwen3.8-27b` pago, já que a versão gratuita saiu do OpenRouter.
-- Tirei as referências ao Ollama que sobraram na documentação e no `validate_dataset.py`.
+- Desliguei a orientação de linha do OCR por padrão também no `pipeline.py` e no `main.py`, igual ao notebook.
+- O `qwen/qwen3.8-27b` gratuito saiu do OpenRouter e a versão paga virou o padrão. Para não pagar, a pipeline voltou a aceitar o Ollama (`--engine ollama`) com o `qwen2.5vl:7b`, que roda na GPU T4 do Colab sem custo.
+- Criei o `ask_vlm`, que gera o HTML direto da imagem, sem OCR (imagem reduzida a 1600 px no lado maior e sempre em PNG).
+- O notebook ganhou a célula do Ollama, o passo do VLM e a tabela de tempo por nota (`runs/tempos_por_nota.csv`). Ele agora processa várias notas de uma vez (imagens ou `.zip`), e o `ocr` também aceita `.zip`.
+- Rodei no Colab as 19 notas do lote diverso (100 a 300 dpi) com o `qwen2.5vl:7b`, lendo o texto do OCR (LLM) e lendo a imagem (VLM). A primeira tentativa deu erro em todas porque o Ollama estava sem o `llama-server`; corrigi e rodei de novo.
+- Acerto nos campos da nota: OCR direto 91,0%, OCR + LLM 91,1% e VLM 94,7%. O LLM não melhorou nada; o VLM acertou mais.
+- O VLM respondeu 14 das 19 notas e o LLM 18 de 19. As outras passaram do limite de 8192 tokens (`num_predict`), o HTML ficou pela metade e foi descartado. Cada tentativa gastou ~4,5 minutos à toa. Em 4 das 5 notas cortadas no VLM a nota é pequena, então o modelo provavelmente ficou repetindo texto (não conferi). O corte não parece ligado ao DPI.
+- Tempo médio por nota: OCR direto 71 s, OCR + LLM 130 s e VLM 65 s. O VLM é mais rápido por não precisar do OCR, mas as tentativas cortadas fazem o total dele passar o do OCR + LLM.
+- Subi o limite do notebook para 16384 tokens, mas ainda não testei de novo. Se for repetição, só aumentar o limite pode não resolver. Relatório completo em `relatorio-larissa.md`.
+
+Foi feito (Guilherme):
+
+- Montou a própria versão do notebook (`guilherme_pipeline_ipynb.ipynb`) com o modelo gratuito `nvidia/nemotron-3-ultra-550b-a55b:free` no OpenRouter.
+- Colocou um contrato de campos (`contrato_campos.csv`) no prompt: cada valor da nota sai marcado no HTML com `data-field`, e o notebook confere quais campos do contrato ficaram sem marcação.
+- Comparou as mesmas 19 notas nos três caminhos (`relatorio-guilherme.md`): OCR direto 79,0%, OCR + LLM 88,1% e VLM 96,1% (o VLM só respondeu 15 das 19). Ele usa outro conjunto de campos, então os percentuais não são comparáveis com os meus, mas a conclusão é a mesma: o VLM acerta mais, mas falha em algumas notas.
+- Tempo médio por nota: OCR direto 71 s, OCR + LLM 184 s e VLM 124 s.
