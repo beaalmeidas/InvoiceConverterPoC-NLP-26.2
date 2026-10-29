@@ -21,3 +21,4 @@ input/amostra_diversa/
 # local
 arquivos_mortos/
 .DS_Store
+*.zip
