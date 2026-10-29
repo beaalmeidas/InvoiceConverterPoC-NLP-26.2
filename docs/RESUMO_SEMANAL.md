@@ -84,7 +84,7 @@ Foi feito (Larissa):
 - Tempo médio por nota: OCR direto 71 s, OCR + LLM 130 s e VLM 65 s. O VLM é mais rápido por não precisar do OCR, mas as tentativas cortadas fazem o total dele passar o do OCR + LLM.
 - Subi o limite do notebook para 16384 tokens, mas ainda não testei de novo. Se for repetição, só aumentar o limite pode não resolver. Relatório completo em `relatorio-larissa.md`.
 
-Foi feito (Guilherme):
+Foi feito por Guilherme:
 
 - Montou a própria versão do notebook (`guilherme_pipeline_ipynb.ipynb`) com o modelo gratuito `nvidia/nemotron-3-ultra-550b-a55b:free` no OpenRouter.
 - Colocou um contrato de campos (`contrato_campos.csv`) no prompt: cada valor da nota sai marcado no HTML com `data-field`, e o notebook confere quais campos do contrato ficaram sem marcação.
