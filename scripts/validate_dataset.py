@@ -1,4 +1,4 @@
-"""compara as três saídas do ocr e os htmls com os gabaritos."""
+"""compares the three ocr outputs and the htmls against the ground truth."""
 
 from collections import Counter, defaultdict
 from decimal import Decimal, InvalidOperation
@@ -25,13 +25,13 @@ MANIFEST_PATH = DATASET_DIR / "manifesto.csv"
 REPORT_PATH = RESULTS_DIR / "relatorio_validacao.md"
 STRUCTURE_TAGS = ("table", "tr", "td", "th")
 
-# variante: (nome da entrada, nome do html)
-VARIANTS = {"compact": ("JSON compacto", "HTML compacto"), "markdown": ("Markdown OCR", "HTML do Markdown"),
-            "full_json": ("JSON completo", "HTML do JSON completo")}
+# variant: (input name, html name)
+VARIANTS = {"compact": ("Compact JSON", "Compact HTML"), "markdown": ("OCR Markdown", "Markdown HTML"),
+            "full_json": ("Full JSON", "Full JSON HTML")}
 
 
 class VisibleHTMLParser(HTMLParser):
-    """lê textos e tabelas; ignora estilos e scripts."""
+    """reads texts and tables; ignores styles and scripts."""
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
@@ -132,16 +132,16 @@ def source_html(kind, content):
 
 def validate_response(raw, reference, reason):
     if reason == "length":
-        raise ValueError("LLM atingiu o limite de geração (finish_reason=length).")
+        raise ValueError("LLM hit the generation limit (finish_reason=length).")
     result = inspect_html(raw)
     if result.stack or result.errors:
-        raise ValueError("HTML incompleto ou com tags fora de ordem.")
+        raise ValueError("Incomplete HTML or tags out of order.")
     if any(result.counts[tag] == 0 for tag in ("html", "body")):
-        raise ValueError("Resposta sem documento HTML completo.")
+        raise ValueError("Response without a complete HTML document.")
     source = inspect_html(reference)
     for tag in ("table", "tr", "td", "th"):
         if result.counts[tag] != source.counts[tag] and source.counts[tag]:
-            raise ValueError(f"Estrutura alterada: {tag}: entrada={source.counts[tag]}, saída={result.counts[tag]}.")
+            raise ValueError(f"Structure changed: {tag}: input={source.counts[tag]}, output={result.counts[tag]}.")
     def document_signature(markup):
         soup = BeautifulSoup(markup, "html.parser")
         for hidden in soup.find_all(["head", "style", "script"]):
@@ -155,9 +155,9 @@ def validate_response(raw, reference, reason):
     expected_text, expected_cells = document_signature(reference)
     actual_text, actual_cells = document_signature(raw)
     if expected_text != actual_text:
-        raise ValueError("Conteúdo alterado, omitido, acrescentado ou fora de ordem.")
+        raise ValueError("Content changed, omitted, added or out of order.")
     if expected_cells != actual_cells:
-        raise ValueError("Células, mesclagens ou ordem das tabelas alteradas.")
+        raise ValueError("Cells, merges or table order changed.")
     return 1.0
 
 
@@ -167,7 +167,7 @@ def recall(reference, candidate):
 
 
 class RowsParser(HTMLParser):
-    """separa tabelas e células; ignora células com tabelas internas."""
+    """splits tables and cells; ignores cells with inner tables."""
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.tables, self.rows, self.cells, self.finished = [], [], [], []
@@ -262,7 +262,7 @@ def check_products(products, html):
     rows = product_rows(html)
     used, checks = set(), []
     for product in products:
-        # exige código exato, com pontuação e zeros iniciais
+        # requires the exact code, with punctuation and leading zeros
         candidates = [(i, row) for i, row in enumerate(rows)
                       if i not in used and row.get("code", "").strip() == product["code"]]
         def field_matches(row):
@@ -426,15 +426,15 @@ def read_xml_fields(xml_path):
     add("chave de acesso", key, "digits")
     add("CNPJ do emitente", xml_text(emit, "CNPJ"), "digits")
     add("nome do emitente", xml_text(emit, "xNome"))
-    add("CNPJ/CPF do destinatário", xml_text(dest, "CNPJ") or xml_text(dest, "CPF"), "digits")
-    add("nome do destinatário", xml_text(dest, "xNome"))
-    add("natureza da operação", xml_text(ide, "natOp"))
-    add("valor total da nota", xml_text(total, "vNF"), "money")
+    add("recipient CNPJ/CPF", xml_text(dest, "CNPJ") or xml_text(dest, "CPF"), "digits")
+    add("recipient name", xml_text(dest, "xNome"))
+    add("nature of the operation", xml_text(ide, "natOp"))
+    add("invoice total", xml_text(total, "vNF"), "money")
     if inf is not None:
         for detail in (node for node in inf if node.tag.split("}")[-1] == "det"):
             product = local_child(detail, "prod")
-            add("código de produto", xml_text(product, "cProd"))
-            add("descrição de produto", xml_text(product, "xProd"))
+            add("product code", xml_text(product, "cProd"))
+            add("product description", xml_text(product, "xProd"))
     return fields
 
 
@@ -463,24 +463,24 @@ def main():
     global RESULTS_DIR, REPORT_PATH
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--results-dir", type=Path, default=RESULTS_DIR)
-    parser.add_argument("--doc-id", action="append", help="avalia só estes documentos do manifesto")
-    parser.add_argument("--ocr-only", action="store_true", help="avalia texto bruto, blocos e produtos sem exigir html")
+    parser.add_argument("--doc-id", action="append", help="evaluates only these manifest documents")
+    parser.add_argument("--ocr-only", action="store_true", help="evaluates raw text, blocks and products without requiring html")
     args = parser.parse_args()
     RESULTS_DIR = args.results_dir.resolve()
     intermediates_dir, html_dir = result_directories(RESULTS_DIR)
     REPORT_PATH = intermediates_dir / "relatorio_validacao.md"
     intermediates_dir.mkdir(parents=True, exist_ok=True)
     if not MANIFEST_PATH.exists():
-        raise FileNotFoundError(f"Manifesto não encontrado: {MANIFEST_PATH}")
+        raise FileNotFoundError(f"Manifest not found: {MANIFEST_PATH}")
     with MANIFEST_PATH.open(encoding="utf-8-sig", newline="") as file:
         manifest = list(csv.DictReader(file))
     if args.doc_id:
         unknown = set(args.doc_id) - {r["doc_id"] for r in manifest}
         if unknown:
-            parser.error(f"doc_id desconhecido: {sorted(unknown)}")
+            parser.error(f"unknown doc_id: {sorted(unknown)}")
         manifest = [r for r in manifest if r["doc_id"] in args.doc_id]
     documents = write_ocr_report(manifest, DATASET_DIR, intermediates_dir, artifact_paths)
-    print(f"OCR: {len(documents)} documento(s) comparado(s); {intermediates_dir / 'ocr_quality.md'}")
+    print(f"OCR: {len(documents)} document(s) compared; {intermediates_dir / 'ocr_quality.md'}")
     if args.ocr_only:
         return
 
@@ -494,29 +494,29 @@ def main():
     }
     counts = {key: sum(1 for _ in (html_dir if key.startswith("html_") else intermediates_dir).rglob(pattern))
               for key, pattern in patterns.items()}
-    # exclui relatórios da busca por markdown do ocr
+    # excludes reports from the ocr markdown search
     counts["markdown"] = sum(1 for path in intermediates_dir.rglob("*.md") if path.name not in {REPORT_PATH.name, "ocr_quality.md"})
     if not any(counts.values()):
         REPORT_PATH.write_text(
-            "# Validação da amostra DANFE\n\n"
-            f"Manifesto: {len(manifest)} documentos; {sum(len(capture_paths(row)) for row in manifest)} imagens.\n\n"
-            "Ainda não há resultados do OCR em `output/output-sintetico/`, então não foi possível comparar os três fluxos.\n\n"
-            "Rode `python main.py ocr`, `python main.py html` e depois `python scripts/validate_dataset.py`.\n",
+            "# DANFE sample validation\n\n"
+            f"Manifest: {len(manifest)} documents; {sum(len(capture_paths(row)) for row in manifest)} images.\n\n"
+            "There are no OCR results in `output/output-sintetico/` yet, so the three flows could not be compared.\n\n"
+            "Run `python main.py ocr`, `python main.py html` and then `python scripts/validate_dataset.py`.\n",
             encoding="utf-8",
         )
-        print(f"Relatório inicial salvo em {REPORT_PATH}")
+        print(f"Initial report saved to {REPORT_PATH}")
         return
 
     results = []
     error_docs = defaultdict(set)
     for row in manifest:
-        doc_id = row.get("doc_id", "(sem id)")
+        doc_id = row.get("doc_id", "(no id)")
         issues = []
         pages = []
         for capture_path in capture_paths(row):
             paths = artifact_paths(capture_path)
             if paths is None:
-                issues.append(("caminho de captura inválido", capture_path))
+                issues.append(("invalid capture path", capture_path))
                 continue
             image_path = DATASET_DIR / capture_path
             pages.append({"capture": capture_path, "image": image_path, **paths})
@@ -528,7 +528,7 @@ def main():
             for path in collection.values()
         )
         if not any_output and all(page["image"].is_file() for page in pages):
-            issues.append(("ainda não processado", f"{len(pages)} imagem(ns) aguardando execução"))
+            issues.append(("not processed yet", f"{len(pages)} image(s) waiting to run"))
         else:
             for page in pages:
                 if not page["image"].is_file():
@@ -544,15 +544,15 @@ def main():
         xml_path = DATASET_DIR / "xml" / f"{xml_id}.xml"
         reference = parse_html(reference_path.read_text(encoding="utf-8", errors="replace")) if reference_path.is_file() else None
         if reference is None:
-            issues.append(("HTML de referência ausente", row.get("caminho_html", "")))
+            issues.append(("reference HTML missing", row.get("caminho_html", "")))
         xml_fields = []
         if not xml_path.is_file():
-            issues.append(("XML de referência ausente", f"xml/{xml_id}.xml"))
+            issues.append(("reference XML missing", f"xml/{xml_id}.xml"))
         else:
             try:
                 xml_fields = read_xml_fields(xml_path)
             except (ET.ParseError, OSError) as exc:
-                issues.append(("XML inválido", str(exc)))
+                issues.append(("invalid XML", str(exc)))
 
         source_texts = {variant: [] for variant in VARIANTS}
         html_data = {
@@ -566,7 +566,7 @@ def main():
                     try:
                         source_texts[variant].append(read_source_text(source_path, variant))
                     except (OSError, json.JSONDecodeError, TypeError, AttributeError, ET.ParseError) as exc:
-                        issues.append((f"{VARIANTS[variant][0]} inválido", f"{page['capture']}: {exc}"))
+                        issues.append((f"{VARIANTS[variant][0]} invalid", f"{page['capture']}: {exc}"))
                 html_path = page["html"][variant]
                 if html_path.is_file():
                     try:
@@ -576,7 +576,7 @@ def main():
                         for kind in ("rowspan", "colspan"):
                             html_data[variant]["spans"][kind].update(stats["spans"][kind])
                     except OSError as exc:
-                        issues.append((f"{VARIANTS[variant][1]} ilegível", str(exc)))
+                        issues.append((f"{VARIANTS[variant][1]} unreadable", str(exc)))
 
         scores = {}
         structure = {}
@@ -618,7 +618,7 @@ def main():
         xml_checks = Counter()
         if reference:
             for label, value, kind in xml_fields:
-                # conta só valores presentes no html de referência
+                # counts only values present in the reference html
                 if not xml_value_present(reference["text"], value, kind):
                     continue
                 for variant in VARIANTS:
@@ -650,16 +650,16 @@ def main():
         })
 
     report = [
-        "# Validação dos fluxos da amostra DANFE",
+        "# DANFE sample flow validation",
         "",
-        f"- Documentos no manifesto: **{len(manifest)}**",
-        f"- Imagens listadas: **{sum(len(capture_paths(row)) for row in manifest)}**",
+        f"- Documents in the manifest: **{len(manifest)}**",
+        f"- Images listed: **{sum(len(capture_paths(row)) for row in manifest)}**",
         "",
-        "## Arquivos e recall textual por etapa",
+        "## Files and textual recall per stage",
         "",
-        "O recall é a proporção de palavras do HTML de referência encontradas em cada etapa.",
+        "Recall is the share of words of the reference HTML found in each stage.",
         "",
-        "| Fluxo | Arquivos | Documentos comparados | Recall médio |",
+        "| Flow | Files | Documents compared | Mean recall |",
         "|---|---:|---:|---:|",
     ]
     stage_names = {}
@@ -673,7 +673,7 @@ def main():
             f"{len(stage_scores)} | {fmt_pct(sum(score['recall'] for score in stage_scores) / len(stage_scores)) if stage_scores else '—'} |"
         )
 
-    report += ["", "## Estrutura HTML", "", "| HTML gerado | Documentos comparados | Estrutura igual ao gabarito |", "|---|---:|---:|"]
+    report += ["", "## HTML structure", "", "| Generated HTML | Documents compared | Structure equal to the reference |", "|---|---:|---:|"]
     for variant in VARIANTS:
         values = [result["structure"][variant] for result in results if result["structure"][variant] is not None]
         report.append(
@@ -681,23 +681,23 @@ def main():
             f"{fmt_pct(sum(values) / len(values)) if values else '—'} |"
         )
 
-    report += ["", "## Valores do XML", "", "Presença lexical dos campos do XML que também aparecem no HTML de referência.", "", "| Etapa | Encontrados / conferidos |", "|---|---:|"]
+    report += ["", "## XML values", "", "Lexical presence of the XML fields that also appear in the reference HTML.", "", "| Stage | Found / checked |", "|---|---:|"]
     for stage, name in stage_names.items():
         checked = sum(result["xml_checks"][stage] for result in results)
         hits = sum(result["xml_hits"][stage] for result in results)
         report.append(f"| {name} | {hits}/{checked} |")
 
-    report += ["", "## Resumo de erros", "", "| Tipo | Documentos afetados |", "|---|---:|"]
+    report += ["", "## Error summary", "", "| Type | Documents affected |", "|---|---:|"]
     if error_docs:
         report += [f"| {category} | {len(doc_ids)} |" for category, doc_ids in sorted(error_docs.items(), key=lambda item: (-len(item[1]), item[0]))]
     else:
         report.append("| Nenhum erro detectado | 0 |")
 
-    for dimension, label in (("captura_dpi", "DPI"), ("aparencia", "Aparência"), ("estrutura", "Estrutura")):
-        report += ["", f"## Recall por {label.lower()}", "", "| " + label + " | " + " | ".join(stage_names.values()) + " |", "|---|" + "---:|" * len(stage_names)]
+    for dimension, label in (("captura_dpi", "DPI"), ("aparencia", "Appearance"), ("estrutura", "Structure")):
+        report += ["", f"## Recall by {label.lower()}", "", "| " + label + " | " + " | ".join(stage_names.values()) + " |", "|---|" + "---:|" * len(stage_names)]
         groups = defaultdict(list)
         for result in results:
-            groups[result["metadata"].get(dimension, "(sem valor)")].append(result)
+            groups[result["metadata"].get(dimension, "(no value)")].append(result)
         for value, group in sorted(groups.items()):
             cells = [value]
             for stage in stage_names:
@@ -705,8 +705,8 @@ def main():
                 cells.append(fmt_pct(sum(values) / len(values)) if values else "—")
             report.append("| " + " | ".join(cells) + " |")
 
-    report += ["", "## Detalhes dos documentos com diferenças", ""]
-    detailed = [result for result in results if result["issues"] and not all(issue[0] == "ainda não processado" for issue in result["issues"])]
+    report += ["", "## Details of documents with differences", ""]
+    detailed = [result for result in results if result["issues"] and not all(issue[0] == "not processed yet" for issue in result["issues"])]
     if not detailed:
         report.append("Nenhum erro nos documentos processados.")
     else:
@@ -716,28 +716,28 @@ def main():
             for stage, name in stage_names.items():
                 score = result["scores"][stage]
                 if score is not None:
-                    report.append(f"- {name}: recall {fmt_pct(score['recall'])}, precisão {fmt_pct(score['precision'])}")
+                    report.append(f"- {name}: recall {fmt_pct(score['recall'])}, precision {fmt_pct(score['precision'])}")
                     if score["missing"]:
                         report.append(f"  - Faltando: {format_tokens(score['missing'])}")
                     if score["extra"]:
                         report.append(f"  - Extra: {format_tokens(score['extra'])}")
             for category, detail in result["issues"]:
-                if category != "ainda não processado":
+                if category != "not processed yet":
                     report.append(f"- **{category}:** {detail}")
             report.append("")
 
     report += [
-        "## Como interpretar",
+        "## How to read this",
         "",
-        "- Os três arquivos de entrada são comparados pelo texto documental; no JSON completo, metadados do PaddleOCR são ignorados na pontuação textual.",
-        "- A comparação textual ignora maiúsculas, acentos e pontuação. Diferenças no fluxo OCR indicam leitura/representação; diferenças que aparecem só no HTML apontam para a geração.",
-        "- A comparação estrutural conta tabelas, linhas, células, `rowspan` e `colspan`; não compara a aparência visual em pixels.",
-        "- Os campos XML são conferidos por presença textual quando também aparecem no HTML de referência; é uma checagem lexical, não uma validação da associação visual do campo.",
-        "- Documentos sem arquivos de saída são contabilizados como ainda não processados, e não como erros de qualidade.",
+        "- The three input files are compared by document text; in the full JSON, PaddleOCR metadata is ignored in the textual score.",
+        "- The textual comparison ignores case, accents and punctuation. Differences in the OCR flow indicate reading/representation; differences that appear only in the HTML point to generation.",
+        "- The structural comparison counts tables, rows, cells, `rowspan` and `colspan`; it does not compare the visual appearance in pixels.",
+        "- XML fields are checked by textual presence when they also appear in the reference HTML; this is a lexical check, not a validation of the field's visual association.",
+        "- Documents without output files are counted as not processed yet, not as quality errors.",
         "",
     ]
     REPORT_PATH.write_text("\n".join(report), encoding="utf-8")
-    print(f"Relatório salvo em {REPORT_PATH}")
+    print(f"Report saved to {REPORT_PATH}")
 
 
 if __name__ == "__main__":

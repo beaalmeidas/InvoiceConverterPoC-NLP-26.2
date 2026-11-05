@@ -1,4 +1,4 @@
-"""compara configurações do ocr em uma nota, sem enviar gabaritos ao ocr."""
+"""compares ocr settings on one invoice, without sending ground truth to the ocr."""
 import argparse
 import csv
 from datetime import datetime, timezone
@@ -57,7 +57,7 @@ def main():
         command = [sys.executable, str(BASE_DIR / "main.py"), "ocr", "--input", str(input_root),
                    "--file", str(source), "--output", str(case_dir), *settings[name]]
         if not args.summarize_only:
-            # evita misturar resultados novos e antigos
+            # avoids mixing new and old results
             if list(case_intermediates.rglob("*_res.json")):
                 parser.error(f"{case_dir} already has OCR results; use a fresh --output or --summarize-only")
             metadata = {"case": name, "command": command, "started_at": datetime.now(timezone.utc).isoformat(),
@@ -94,7 +94,7 @@ def main():
                           "exact_product_rows": sum(c["row_exact"] for c in checks), "product_count": len(products),
                           "product_checks": checks,
                           "duration_seconds": run.get("duration_seconds")})
-        # salva os resultados após cada caso
+        # saves the results after each case
         (report_dir / "comparison.json").write_text(json.dumps(summaries, ensure_ascii=False, indent=2), encoding="utf-8")
     lines = ["# Controlled OCR comparison", "", f"Invoice: `{args.doc_id}`; XML: `{row['xml_id']}`.", "",
              "100 DPI is downsampled from this same 300-DPI image. Other settings change one at a time.", "",
