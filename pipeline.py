@@ -325,6 +325,192 @@ Keep labels with values and the relative layout of fields and sections.
 Preserve every table, row, td/th, rowspan and colspan; do not merge unrelated cells.
 """
 
+MARKERS_PROMPT = """Field tagging: every value that matches a field of the CONTRACT below must carry data-field="<field>" with the exact field name.
+- Put the attribute on the smallest element that holds only the value (td, th, p or span), never on a label, header or section.
+- If a cell holds label and value together, wrap only the value in <span data-field="...">; the label stays outside and all text and order stay unchanged.
+- Label prefixes and currency symbols stay outside the span ("Num.", "Venc.", "Valor R$", "Fone:", "BAIRRO"); the span holds only the value itself.
+- One element, one field. If one text holds several fields (page "1/2", the issuer block, an installment line), wrap each part in its own span. Never nest tagged elements.
+- A value broken by <br> or spread over several lines (access key, address, nature of the operation, a CNPJ cut at the line end) is wrapped by ONE span that includes the <br>; never use two spans for one value.
+- Tag every CONTRACT field whose value is printed. Use only field names from the CONTRACT; never invent names or add text just to hold a tag.
+- If the same value is printed in more than one place (for example invoice.number and invoice.series in the receipt stub and in the header), tag every occurrence, each inside the section where it is printed.
+- Decide by the section where the value is printed: the same label can be an item (item.*, one row per product), a totals field (totals.*), or belong to issuer, recipient or carrier.
+- item.*, payment.*, billing.* and volumes.* repeat: tag every row or occurrence. If the products of the note arrive as loose <p> paragraphs instead of table rows, do not tag item.* at all: a wrong tag is worse than none. A single stray fragment between otherwise intact item rows is not that case: leave the fragment untagged and keep it where it is.
+- A detached digit (operation type, freight type) is tagged in place with data-field on its own element; never move it into another box.
+- Never delete, shorten or reorder any text, label or cell of the input; only add data-field attributes and spans.
+- Respect "only if": CNPJ/CPF of recipient and carrier is one box (count DIGITS and ignore punctuation: 11 digits is *.cpf, 14 digits is *.cnpj, empty is *.document); item CST vs CSOSN follows the column header; exit vs entry date/time follows invoice.operation_type (1 saída, 0 entrada), the digit between "0 - ENTRADA" and "1 - SAÍDA" (it may appear detached from that box as a loose <p>).
+- Fields marked (NFC-e) exist only on NFC-e receipts; DANFE uses invoice.issue_date.
+- Label hints (DANFE): "V. ICMS UF REMET." is totals.icms_uf_origin; "V. ICMS UF DEST." is totals.icms_uf_destination; "V. IMP. IMPORTAÇÃO" is totals.import_tax; "V. APROX. DO TRIBUTO" is totals.approximate_tax; "OUTRAS DESP." is totals.other_expenses; "VALOR DA CONFINS" and "VALOR DO COFINS" are totals.cofins. In the items table: "CS", "CST" and "CSOSN" follow the column header; "ALIQ.ICMS" is item.icms_rate; "ALIQ.IPI" is item.ipi_rate; "BC ICMS" is item.icms_base.
+
+CONTRACT (field — description):
+invoice.access_key — access key (44 digits, grouped in sets of 4)
+invoice.barcode — barcode of the access key (image)
+invoice.qrcode — NFC-e QR Code (image)
+invoice.consult_url — access URL for key-based lookup (NFC-e)
+invoice.number — invoice number
+invoice.series — series
+invoice.operation_nature — nature of the operation
+invoice.operation_type — operation type: 0 incoming, 1 outgoing
+invoice.issue_date — issue date
+invoice.issue_datetime — issue date and time (NFC-e)
+invoice.exit_date — exit date (only if: ide/tpNF = 1)
+invoice.exit_time — exit time (only if: ide/tpNF = 1)
+invoice.entry_date — entry date (only if: ide/tpNF = 0)
+invoice.entry_time — entry time (only if: ide/tpNF = 0)
+invoice.protocol — authorization protocol number
+invoice.authorization_datetime — authorization date and time
+issuer.name — issuer's legal business name
+issuer.cnpj — issuer's CNPJ
+issuer.state_registration — issuer's state registration
+issuer.state_registration_st — tax substitute's state registration
+issuer.municipal_registration — municipal registration (with ISSQN)
+issuer.address — street, number, and complement
+issuer.full_address — street, neighborhood, city, and state on one line (NFC-e)
+issuer.neighborhood — neighborhood
+issuer.zip_code — ZIP code
+issuer.city — city
+issuer.state — state
+issuer.phone — phone number
+recipient.name — recipient's name or legal business name
+recipient.cpf — recipient's CPF (only if: dest/CPF is present)
+recipient.cnpj — recipient's CNPJ (only if: dest/CNPJ is present)
+recipient.document — recipient's document, when the invoice contains neither CPF nor CNPJ (nothing printed) (only if: neither dest/CPF nor dest/CNPJ is present)
+recipient.state_registration — recipient's state registration
+recipient.address — street, number, and complement
+recipient.neighborhood — neighborhood
+recipient.zip_code — ZIP code
+recipient.city — city
+recipient.state — state
+recipient.phone — phone number
+item.code — product code
+item.description — description
+item.ncm — NCM code
+item.cst — ICMS tax status code (only if: emit/CRT is neither 1 nor 4)
+item.csosn — ICMS tax code for Simples Nacional (only if: emit/CRT = 1 or 4)
+item.origin — origin of the goods
+item.cfop — CFOP code
+item.unit — commercial unit
+item.quantity — quantity
+item.unit_price — unit price
+item.total_price — total item price
+item.discount — item discount
+item.icms_base — ICMS tax calculation base
+item.icms — ICMS amount
+item.icms_rate — ICMS tax rate
+item.ipi — IPI amount
+item.ipi_rate — IPI tax rate
+item.approximate_tax — approximate tax amount for the item
+totals.icms_base — ICMS tax calculation base
+totals.icms — ICMS amount
+totals.icms_st_base — ICMS ST tax calculation base
+totals.icms_st — ICMS ST amount
+totals.import_tax — import tax
+totals.icms_uf_origin — ICMS tax for the originating state
+totals.icms_uf_destination — ICMS tax for the destination state
+totals.fcp — FCP amount
+totals.pis — PIS amount
+totals.cofins — COFINS amount
+totals.products — total value of products
+totals.shipping — shipping cost
+totals.insurance — insurance
+totals.discount — discount
+totals.other_expenses — other ancillary expenses
+totals.additions — additional charges: shipping + insurance + other expenses (NFC-e)
+totals.ipi — IPI amount
+totals.approximate_tax — approximate tax amount
+totals.invoice — total invoice amount
+totals.items_count — number of items (NFC-e)
+payment.method — payment method
+payment.amount — amount paid
+payment.change — change
+billing.number — installment number
+billing.due_date — installment due date
+billing.amount — installment amount
+carrier.freight_type — freight type
+carrier.name — carrier's legal business name
+carrier.cpf — carrier's CPF (only if: transporta/CPF is present)
+carrier.cnpj — carrier's CNPJ (only if: transporta/CNPJ is present)
+carrier.document — carrier's document, when neither CPF nor CNPJ is present (nothing printed) (only if: neither CPF nor CNPJ is present)
+carrier.state_registration — carrier's state registration
+carrier.address — carrier's address
+carrier.city — carrier's city
+carrier.state — carrier's state
+carrier.vehicle_plate — vehicle license plate
+carrier.vehicle_state — vehicle registration state
+carrier.antt_code — ANTT code (RNTC)
+volumes.quantity — number of packages
+volumes.kind — type
+volumes.brand — brand
+volumes.numbering — numbering
+volumes.gross_weight — gross weight
+volumes.net_weight — net weight
+issqn.services_total — total value of services
+issqn.base — ISSQN tax calculation base
+issqn.value — ISSQN amount
+additional.complementary_info — complementary information
+additional.fisco_info — additional information of interest to tax authorities
+page.current — current page
+page.total — total number of pages
+issuer.logo — issuer's logo (image; none of the dataset documents contain one)
+
+Structure tagging: besides data-field, mark the structure of the note with data-section, data-item and data-index. They only add attributes and the wrapper elements named below: text, order, tables and data-field attributes stay unchanged.
+
+0. Root: put the whole document body inside one root element per printed sheet, chosen by document type: <div class="page"> for a DANFE (full-size sheet; one root per sheet, in order), <div class="documento"> for a DANFE Simplificado (label), <div class="areaNfce"> for an NFC-e receipt. Every printed text and image goes inside it.
+
+1. data-section="<name>": every visible text and every barcode/QR Code image must be inside exactly one section, and sections never nest. Use the name of the box where the text is printed.
+DANFE sheet (portrait or landscape):
+- receipt: receipt stub (canhoto: "RECEBEMOS DE ... OS PRODUTOS", receipt date and signature)
+- header: issuer identification, DANFE title box, access key, barcode, sheet number
+- operation: nature of the operation and authorization protocol
+- registration: state registration, state registration ST and CNPJ of the issuer
+- recipient: recipient/sender box
+- billing: invoice and installments (fatura, duplicatas)
+- tax: tax calculation and invoice totals
+- transport: carrier and transported volumes
+- items: products/services table, header and all rows
+- issqn: ISSQN calculation
+- additional_info: additional data (complementary and fisco information)
+- footer: page footer, anything below the last box
+DANFE Simplificado (label): notice (warning text), title (document title), totals, protocol (authorization protocol); the other boxes reuse the names above when they match.
+NFC-e: contingency (contingency warning), payment (payment methods and change), consultation (access key, QR Code, consultation URL), consumer (consumer identification), messages (messages of interest, approximate taxes); the other boxes reuse header, items and totals.
+- Put data-section on the smallest existing element that holds the whole box (section, div or table). If a table holds boxes of different sections, put it on each <tr> instead, never on the table. If no element fits, wrap the box's blocks in <section data-section="...">. Never split a table, move cells or add text.
+- A box may be spread over several tables and loose <p> (recipient, tax, transport and items often are): wrap all of them in one <section data-section="...">, keeping their order.
+- Labels, titles and small text belong to the box they sit in. A box title printed as a <p> above a table (FATURA, CALCULO DO IMPOSTO, DADOS DO PRODUTO/SERVIÇO...) belongs to the box it heads. Choose the section by meaning, not by the physical neighbor: a loose <p> displaced by the OCR (for example "CONTROLE DO FISCO" or the operation-type digit after the header table) goes in the section it belongs to (header). Text that fits no name goes in the nearest box. Never leave text outside a section and never invent a name.
+- If the same box continues after a page break, tag each part with the same name.
+
+2. data-item="<n>": only for item.* fields. n is the product's sequence number (nItem): 1 for the first product, in printed order, over the whole note, continuing across tables and sheets. Each field reads the closest data-item above it, so put it on the element that holds the whole row of the item (the <tr>), never on a single cell. If one item is printed on several <tr> (NFC-e: a line with code and description, another with quantity and price), put the same data-item on every <tr> of it. Never on header, total, title or empty rows. Map the columns by position under the header; empty header cells are alignment columns. Empty cells of a row stay empty and untagged. A stray fragment between item rows (a loose <p> or text outside any row) is never tagged: it would be read as belonging to the item above it. If the items cannot be isolated per row (loose <p>, several items in one cell), tag no data-item and no item.* field.
+
+3. data-index="<n>": only for billing.* and payment.* fields. n is the order of the installment (billing) or of the payment method (payment), from 1 in printed order over the whole note, counted separately for each. Put it on the smallest element that holds ALL fields of ONE occurrence and nothing from another. Vertical layout (one occurrence per row): the <tr>. Horizontal layout (several occurrences in one <tr>, one per <td>): each occurrence's own <td>, never the <tr>, which would give every occurrence the same index. Never on headers, titles, empty cells or empty rows. Never use it for items, volumes or anything else, and not on the change (payment.change), which belongs to no payment method.
+
+Example 1 (vertical layout):
+<div class="page">
+<section data-section="header"><p>DANFE Nº <span data-field="invoice.number">123</span></p></section>
+<table>
+<tr data-section="registration"><td>INSCRIÇÃO ESTADUAL</td><td data-field="issuer.state_registration">12345</td></tr>
+<tr data-section="recipient"><td>DESTINATÁRIO</td><td data-field="recipient.name">CLIENTE LTDA</td></tr>
+</table>
+<section data-section="billing"><table><tr><th>FATURA</th></tr>
+<tr data-index="1"><td data-field="billing.number">001</td><td data-field="billing.amount">10,00</td></tr>
+<tr data-index="2"><td data-field="billing.number">002</td><td data-field="billing.amount">20,00</td></tr></table></section>
+<section data-section="items"><table><tr><th>CÓDIGO</th><th>DESCRIÇÃO</th></tr>
+<tr data-item="1"><td data-field="item.code">001</td><td data-field="item.description">PARAFUSO</td></tr>
+<tr data-item="2"><td data-field="item.code">002</td><td data-field="item.description">PORCA</td></tr></table></section>
+</div>
+
+Example 2 (horizontal installments, box spread over several tables, detached digit, stray fragment):
+<div class="page">
+<section data-section="header"><table><tr><td>DANFE</td><td>Nº <span data-field="invoice.number">000.428.157</span></td></tr></table><p>CONTROLE DO FISCO</p><p data-field="invoice.operation_type">1</p></section>
+<section data-section="billing"><p>FATURA</p><table><tr>
+<td data-index="1">Num. <span data-field="billing.number">001</span><br>Venc. <span data-field="billing.due_date">12/11/2024</span><br>Valor R$ <span data-field="billing.amount">376,54</span></td>
+<td></td>
+<td data-index="2">Num. <span data-field="billing.number">002</span><br>Venc. <span data-field="billing.due_date">12/12/2024</span><br>Valor R$ <span data-field="billing.amount">376,54</span></td>
+</tr></table></section>
+<section data-section="items"><p>DADOS DO PRODUTO/SERVIÇO</p>
+<table><tr><th>CÓDIGO</th><th>DESCRIÇÃO</th><th>VLR.ICMS</th></tr></table>
+<table><tr data-item="1"><td data-field="item.code">P1</td><td data-field="item.description">VODKA 1L</td><td></td></tr></table>
+<p>112, 720, 00</p>
+<table><tr data-item="2"><td data-field="item.code">P2</td><td data-field="item.description">REFRESCO</td><td data-field="item.icms">0,26</td></tr></table></section>
+</div>"""
+
 HTML_STYLE = """<style>
 @page { size: A4 landscape; margin: 10mm; }
 * { box-sizing: border-box; }
@@ -384,7 +570,9 @@ def clean_fragment(content, keep_classes=False):
         tag.decompose()
     for tag in soup.find_all(["html", "body"]):
         tag.unwrap()
-    allowed = {"rowspan", "colspan", "class"} if keep_classes else {"rowspan", "colspan"}
+    allowed = {"rowspan", "colspan", "data-field", "data-section", "data-item", "data-index"}
+    if keep_classes:
+        allowed.add("class")
     for tag in soup.find_all(True):
         tag.attrs = {key: value for key, value in tag.attrs.items() if key in allowed}
     return soup
@@ -426,7 +614,7 @@ def _client(engine="openrouter"):
     return OpenAI(base_url=LLM_URLS[engine], api_key=key, max_retries=5)
 
 
-def _ask(engine, model, content, num_predict=8192, reasoning=False):
+def _ask(engine, model, content, num_predict=16384, reasoning=False):
     """uma chamada de chat; content é texto ou lista de partes (texto e imagem)."""
     response = _client(engine).chat.completions.create(
         model=model, temperature=0, max_tokens=num_predict, messages=[{"role": "user", "content": content}],
@@ -441,13 +629,21 @@ def _ask(engine, model, content, num_predict=8192, reasoning=False):
     return choice.message.content
 
 
-def ask_llm(kind, content, model=None, num_predict=8192, reasoning=False, engine="openrouter"):
+def build_instructions(markers=True):
+    return BASE_PROMPT + (MARKERS_PROMPT if markers else "") + "\n"
+
+
+def build_prompt(kind, content, markers=True):
     source = ("Input: PaddleOCR Markdown with HTML tables." if kind == "markdown" else
               "Input: OCR JSON blocks. Use content as text/table markup, type as label, bbox for layout only; hide coordinates.")
-    return _ask(engine, model or MODELS[engine], f"{BASE_PROMPT}{source}\n\n{content}", num_predict, reasoning)
+    return f"{build_instructions(markers)}{source}\n\n{content}"
 
 
-def ask_vlm(image_path, model=None, num_predict=8192, engine="openrouter"):
+def ask_llm(kind, content, model=None, num_predict=16384, reasoning=False, engine="openrouter", prompt=None):
+    return _ask(engine, model or MODELS[engine], prompt or build_prompt(kind, content), num_predict, reasoning)
+
+
+def ask_vlm(image_path, model=None, num_predict=16384, engine="openrouter", markers=True):
     """html direto da imagem, sem ocr; a imagem vai reduzida a VLM_MAX_SIDE e em png."""
     import base64
     import cv2
@@ -459,11 +655,11 @@ def ask_vlm(image_path, model=None, num_predict=8192, engine="openrouter"):
         image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
     data = base64.b64encode(cv2.imencode(".png", image)[1]).decode()
     return _ask(engine, model or MODELS[engine], [
-        {"type": "text", "text": f"{BASE_PROMPT}Input: image of a Brazilian invoice (DANFE). Transcribe every printed text exactly."},
+        {"type": "text", "text": f"{build_instructions(markers)}Input: image of a Brazilian invoice (DANFE). Transcribe every printed text exactly."},
         {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{data}"}}], num_predict)
 
 
-def write_html(layout_path, kind, results_dir, engine="direct", model=None, num_predict=8192, reasoning=False):
+def write_html(layout_path, kind, results_dir, engine="direct", model=None, num_predict=16384, reasoning=False, markers=True):
     """gera um html final (engine direct, openrouter ou ollama); o log fica nos intermediários."""
     source = source_path(layout_path, kind)
     if not source.is_file():
@@ -475,8 +671,14 @@ def write_html(layout_path, kind, results_dir, engine="direct", model=None, num_
     with stage(f"html:{engine}:{kind}") as record:
         try:
             content = prepare_content(kind, source)
-            html = (render_source(kind, content) if engine == "direct" else
-                    add_presentation(ask_llm(kind, content, model, num_predict, reasoning, engine)))
+            if engine == "direct":
+                html = render_source(kind, content)
+            else:
+                raw = ask_llm(kind, content, model, num_predict, reasoning, engine,
+                              prompt=build_prompt(kind, content, markers))
+                html = add_presentation(raw)
+                log["data_field_raw"] = raw.count("data-field=")
+                log["data_field_final"] = html.count("data-field=")
             destination.write_text(html, encoding="utf-8")
             if engine != "direct":
                 log.update(model=model or MODELS[engine], **{k: record[k] for k in ("tokens_in", "tokens_out", "cost_usd")})

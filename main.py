@@ -73,7 +73,7 @@ def main(argv=None):
     html.add_argument("--model", help=f"padrão: {pipeline.MODELS}")
     html.add_argument("--output", "--results-dir", type=Path, default=RESULTS_DIR)
     html.add_argument("--limit", type=int, default=0, help="máximo de páginas; 0 = todas")
-    html.add_argument("--num-predict", type=int, default=8192)
+    html.add_argument("--num-predict", type=int, default=16384)
     html.add_argument("--reasoning", action="store_true", help="openrouter: liga o raciocínio (risco de truncar)")
     args = parser.parse_args(argv)
     failures = (run_ocr if args.command == "ocr" else run_html)(parser, args)
