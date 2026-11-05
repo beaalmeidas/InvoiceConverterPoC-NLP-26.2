@@ -1,53 +1,58 @@
 # InvoiceConverterPoC-NLP-26.2
 
-OCR de notas fiscais (PaddleOCR) → HTML, direto ou via LLM (Ollama ou OpenRouter), com métricas por etapa.
-O HTML sai com marcadores (`data-field`, `data-section`, `data-item`, `data-index`) para o contrato de campos.
-Detalhes do fluxo em [`docs/FLUXO.md`](docs/FLUXO.md).
+**English** · [Português (BR)](README.pt-BR.md)
 
-## Notebook (uso principal)
+OCR of invoices (PaddleOCR) → HTML, directly or via an LLM (Ollama or OpenRouter), with per-stage metrics.
+The HTML comes out with markers (`data-field`, `data-section`, `data-item`, `data-index`) for the field contract.
+The invoices are Brazilian (DANFE/NFC-e), so the generated HTML stays in Portuguese; code, comments and messages are in English.
+Details of the flow are in [`docs/FLUXO.md`](docs/FLUXO.md) (in Portuguese).
 
-A pipeline roda em `notebooks/pipeline_openrouter.ipynb`, que tem todo o código dentro dele: não precisa do `pipeline.py` nem de zip.
-Ele faz OCR → HTML via LLM, HTML direto da imagem (VLM) e compara o tempo de cada caminho.
-Versões antigas ficam em `notebooks/historico/` (`v1` a `v4`), só como registro.
+## Notebook (main usage)
 
-### No Google Colab
+The pipeline runs in `notebooks/pipeline_openrouter.ipynb`, which has all the code inside it: no `pipeline.py` or zip needed.
+It does OCR → HTML via LLM, HTML straight from the image (VLM), and compares the time of each path.
+Old versions live in `notebooks/historico/` (`v1` to `v4`), kept only as a record.
 
-Com `ENGINE = "ollama"` (padrão) roda 100% no Colab, sem custo: o `qwen2.5vl:7b` fica na GPU.
+### On Google Colab
 
-1. Escolha o ambiente com GPU T4 (Ambiente de execução → Alterar o tipo) e suba o notebook.
-2. Rode as células e envie as notas quando a célula de preparo pedir: várias imagens de uma vez ou um `.zip` (pode ter subpastas). A célula do Ollama instala o servidor e baixa o modelo (~6 GB) a cada sessão. Se o Colab pedir, reinicie a sessão após a instalação e rode tudo de novo.
-3. Para cada nota, o notebook gera o HTML pelo OCR + LLM e direto da imagem (VLM). O tempo de cada nota fica em `runs/tempos_por_nota.csv`; o OCR leva ~2 min por nota na CPU.
-4. Para usar a OpenRouter (pago), troque `ENGINE = "openrouter"` e crie o secret `OPENROUTER_API_KEY` (🔑).
-5. A última célula baixa `output/` e `runs/` num `colab_resultados.zip`. A sessão do Colab é temporária: o que não for baixado se perde.
+With `ENGINE = "ollama"` (default) everything runs on Colab at no cost: `qwen2.5vl:7b` sits on the GPU.
 
-O raciocínio do modelo fica desligado (`REASONING = False`, só OpenRouter): ligado, o Qwen3.8 gasta de 5 a 16 mil tokens pensando e pode truncar o HTML.
+1. Pick the T4 GPU runtime (Runtime → Change runtime type) and upload the notebook.
+2. Run the cells and upload the invoices when the setup cell asks: several images at once or a `.zip` (subfolders allowed). The Ollama cell installs the server and downloads the model (~6 GB) every session. If Colab asks, restart the session after the install and run everything again.
+3. For each invoice, the notebook generates the HTML through OCR + LLM and straight from the image (VLM). The time per invoice is saved in `runs/tempos_por_nota.csv`; OCR takes ~2 min per invoice on the CPU.
+4. To use OpenRouter (paid), set `ENGINE = "openrouter"` and create the `OPENROUTER_API_KEY` secret (🔑).
+5. The last cell downloads `output/` and `runs/` as `colab_resultados.zip`. A Colab session is temporary: whatever is not downloaded is lost.
 
-### Localmente
+Model reasoning is off (`REASONING = False`, OpenRouter only): when on, Qwen3.8 spends 5 to 16 thousand tokens thinking and may truncate the HTML.
+
+### Locally
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env   # coloque sua chave; só para o engine openrouter (pago)
+cp .env.example .env   # put your key here; only for the openrouter engine (paid)
 ```
 
-Depois abra o notebook no Jupyter.
+Then open the notebook in Jupyter.
 
-## Linha de comando (`pipeline.py` e `main.py`)
+## Command line (`pipeline.py` and `main.py`)
 
-`pipeline.py` é a cópia do código do notebook, usada por `main.py`, pelos testes e por `scripts/avaliar.py`.
-Ela tem OCR, tabelas, HTML (direto, Ollama ou OpenRouter), VLM (`ask_vlm`), marcadores e métricas;
-`main.py` é só a linha de comando (`python main.py ocr` e `python main.py html`).
-**O código está duplicado**: ao mudar um (por exemplo, o prompt), copie a mudança para o outro.
+`pipeline.py` is a copy of the notebook code, used by `main.py`, the tests and `scripts/avaliar.py`.
+It has OCR, tables, HTML (direct, Ollama or OpenRouter), VLM (`ask_vlm`), markers and metrics;
+`main.py` is only the command line (`python main.py ocr` and `python main.py html`).
+**The code is duplicated**: when you change one (for example, the prompt), copy the change to the other.
 
-Testes: `python -m unittest discover tests`.
+Tests: `python -m unittest discover tests`.
 
-Avaliação contra os gabaritos do dataset sintético: `python scripts/avaliar.py`
-(relatório em `output/avaliacao/`). Para gerar antes as 5 entradas com um mesmo modelo, inclusive
-a imagem direto no VLM: `python scripts/avaliar.py --gerar qwen2.5vl:7b --engine ollama`.
-O relatório traz o tempo total de cada caminho (OCR + LLM contra VLM); notas com OCR feito
-antes desta versão não têm o tempo do OCR registrado.
+Evaluation against the synthetic dataset ground truth: `python scripts/avaliar.py`
+(report in `output/avaliacao/`). To first generate the 5 inputs with the same model, including
+the image straight into the VLM: `python scripts/avaliar.py --gerar qwen2.5vl:7b --engine ollama`.
+The report gives the total time of each path (OCR + LLM versus VLM); invoices whose OCR was run
+before this version have no OCR time recorded.
 
-## Documentação
+## Documentation
 
-- [`docs/FLUXO.md`](docs/FLUXO.md): fluxo da pipeline
-- [`docs/RESUMO_SEMANAL.md`](docs/RESUMO_SEMANAL.md): o que foi feito a cada semana
-- [`docs/otimizacao.md`](docs/otimizacao.md): alterações e medições anteriores
+These documents are kept in their original language (Portuguese):
+
+- [`docs/FLUXO.md`](docs/FLUXO.md): pipeline flow
+- [`docs/RESUMO_SEMANAL.md`](docs/RESUMO_SEMANAL.md): what was done each week
+- [`docs/otimizacao.md`](docs/otimizacao.md): earlier changes and measurements

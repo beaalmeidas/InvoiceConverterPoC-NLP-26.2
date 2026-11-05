@@ -1,8 +1,8 @@
-"""avalia P1 (llm vs direto), P2 (representação), P3 (ruled_table vs paddle) e atribui erros por etapa.
+"""evaluates P1 (llm vs direct), P2 (representation), P3 (ruled_table vs paddle) and attributes errors by stage.
 
   python scripts/avaliar.py                    → output/avaliacao/relatorio.md e metricas.json
   python scripts/avaliar.py --gerar MODELO [--engine ollama]
-      → antes, gera as 5 condições com um mesmo llm (openrouter por padrão; ollama: qwen2.5vl:7b local)
+      → first generates the 5 conditions with the same llm (openrouter by default; ollama: local qwen2.5vl:7b)
 """
 from collections import Counter
 from decimal import Decimal
@@ -19,9 +19,9 @@ import pipeline
 from validate_dataset import (DATASET_DIR, check_products, decimal_cell, normalized_text, read_source_text,
                               read_xml_fields, score_text, tokens, xml_products, xml_value_present)
 
-LLM_DIR = pipeline.OUTPUT_DIR / "output-sintetico"                # 5 notas com html via openrouter
+LLM_DIR = pipeline.OUTPUT_DIR / "output-sintetico"                # 5 invoices with html via openrouter
 OUT = pipeline.OUTPUT_DIR / "avaliacao"
-NATIVE_DIR = OUT / "paddle-nativo"                                # ocr com --no-ruled-tables
+NATIVE_DIR = OUT / "paddle-nativo"                                # ocr with --no-ruled-tables
 GEN_DIR = OUT / "llm"
 KINDS = {"compact": "JSON blocos", "markdown": "Markdown", "full_json": "JSON completo"}
 LABELS = {**KINDS, "lines": "Linhas OCR + bbox", "image": "Imagem (VLM)"}
@@ -29,7 +29,7 @@ LINES_SOURCE = ("Input: OCR text lines as JSON [{t: text, b: [x1,y1,x2,y2] pixel
                 "columns and tables; hide coordinates.")
 MANIFEST = {r["doc_id"]: r for r in csv.DictReader((DATASET_DIR / "manifesto.csv").open(encoding="utf-8-sig"))}
 METRICS = ["recall", "precision", "fields", "rows", "cell_f1"]
-STAGES = ["ok", "ocr", "montagem", "geração"]
+STAGES = ["ok", "ocr", "assembly", "generation"]
 
 
 def body_text(html):
@@ -40,7 +40,7 @@ def body_text(html):
 
 
 def cells(html):
-    """textos normalizados das células folha (sem tabela interna), sem vazias."""
+    """normalized texts of leaf cells (no inner table), without empty ones."""
     return Counter(text for cell in BeautifulSoup(html, "html.parser").find_all(["td", "th"]) if not cell.find("table")
                    if (text := normalized_text(cell.get_text(" ", strip=True))))
 
@@ -65,23 +65,23 @@ def score(g, html):
 
 
 def hallucination(ocr, text):
-    """tokens (e números) da saída que não existem nas linhas do ocr."""
+    """tokens (and numbers) of the output that are not in the ocr lines."""
     out, src = Counter(tokens(text)), Counter(tokens(ocr))
     nums = Counter({t: n for t, n in out.items() if any(c.isdigit() for c in t)})
-    return {"aluc_tokens": sum((out - src).values()) / max(1, sum(out.values())),
-            "aluc_numeros": sum((nums - src).values()) / max(1, sum(nums.values())),
-            "aluc_exemplos": [t for t, _ in (out - src).most_common(6)]}
+    return {"halluc_tokens": sum((out - src).values()) / max(1, sum(out.values())),
+            "halluc_numbers": sum((nums - src).values()) / max(1, sum(nums.values())),
+            "halluc_examples": [t for t, _ in (out - src).most_common(6)]}
 
 
 def attribute(g, lines, rep_text, before, final):
-    """cada campo/produto errado no final vai para a primeira etapa que o perdeu.
+    """each field/product wrong at the end goes to the first stage that lost it.
 
-    lines=None: sem etapa de ocr (vlm). before=None: sem montagem determinística (llm montou)."""
+    lines=None: no ocr stage (vlm). before=None: no deterministic assembly (the llm assembled)."""
     ocr, blame = " ".join(lines or []), Counter()
 
     def stage(right_at_end, read_by_ocr, kept_by_assembly):
         return ("ok" if right_at_end else "ocr" if lines is not None and not read_by_ocr
-                else "montagem" if not kept_by_assembly else "geração")
+                else "assembly" if not kept_by_assembly else "generation")
 
     for _, value, kind in g["fields"]:
         blame[stage(xml_value_present(final["_text"], value, kind), xml_value_present(ocr, value, kind),
@@ -95,7 +95,7 @@ def attribute(g, lines, rep_text, before, final):
 
 
 def outputs(layout):
-    """(motor, tipo, html, custo) de cada html desta nota: direto, llm do pipeline e llm de --gerar."""
+    """(engine, kind, html, cost) of each html of this invoice: direct, pipeline llm and --gerar llm."""
     for kind in KINDS:
         content = pipeline.prepare_content(kind, pipeline.source_path(layout, kind))
         yield "direct", kind, pipeline.render_source(kind, content), {}
@@ -110,7 +110,7 @@ def outputs(layout):
 
 
 def native_and_ruled(folder):
-    """html direto do paddle puro e do mesmo ocr reparado pelas bordas."""
+    """html straight from plain paddle and from the same ocr repaired by the borders."""
     import cv2
 
     res = json.loads(next(folder.glob("*_res.json")).read_text(encoding="utf-8"))
@@ -128,7 +128,7 @@ def native_and_ruled(folder):
 
 
 def generate(model, engine="openrouter"):
-    """mesmo llm para as 5 entradas; pula o que já existe. falhas ficam no .json ao lado."""
+    """same llm for the 5 inputs; skips what already exists. failures stay in the .json next to it."""
     for layout in sorted(pipeline.result_directories(LLM_DIR)[0].rglob("*_layout.json")):
         res = json.loads(pipeline.source_path(layout, "full_json").read_text(encoding="utf-8"))
         ocr = res["overall_ocr_res"]
@@ -215,19 +215,19 @@ def main():
     p3["cells_ratio"] = p3.n_cells / p3.gold_cells
     pair = p3.pivot(index=["doc", "estrutura", "repaired"], columns="condition", values=["cell_f1", "rows"])
     pair.columns = [f"{m} {c}" for m, c in pair.columns]
-    md = ["# Avaliação P1–P3", "", f"Notas P1/P2: {df.doc.nunique()} · notas P3: {p3.doc.nunique()}", "",
-          "## P1/P2 — médias por condição", "",
-          *markdown(by[METRICS + ["aluc_tokens", "aluc_numeros"]].mean(), METRICS + ["aluc_tokens", "aluc_numeros"]),
-          "", "## Atribuição de erros (campos XML + linhas de produto)", "",
+    md = ["# P1–P3 evaluation", "", f"P1/P2 invoices: {df.doc.nunique()} · P3 invoices: {p3.doc.nunique()}", "",
+          "## P1/P2 — means per condition", "",
+          *markdown(by[METRICS + ["halluc_tokens", "halluc_numbers"]].mean(), METRICS + ["halluc_tokens", "halluc_numbers"]),
+          "", "## Error attribution (XML fields + product rows)", "",
           *markdown(df.dropna(subset=["ok"]).groupby(["condition", "engine"], sort=False)[STAGES].sum().astype(int)),
-          "", "## Exemplos de tokens alucinados (LLM)", "",
-          *(f"- `{r.doc}` / {r.condition}: {', '.join(r.aluc_exemplos) or '—'}"
-            for r in df.dropna(subset=["aluc_exemplos"]).itertuples()),
-          "", "## Custo LLM por chamada (médias)", "",
+          "", "## Examples of hallucinated tokens (LLM)", "",
+          *(f"- `{r.doc}` / {r.condition}: {', '.join(r.halluc_examples) or '—'}"
+            for r in df.dropna(subset=["halluc_examples"]).itertuples()),
+          "", "## LLM cost per call (means)", "",
           *markdown(llm[["tokens_in", "tokens_out", "seconds"]].mean().round(1)),
-          "", "## Tempo total por caminho (s, média por nota; OCR + LLM, o VLM não passa pelo OCR)", "",
+          "", "## Total time per path (s, mean per invoice; OCR + LLM, the VLM skips the OCR)", "",
           *markdown(by[["total_seconds"]].mean().round(1)),
-          "", "## P3 — ruled_table vs HTML do Paddle", "",
+          "", "## P3 — ruled_table vs Paddle HTML", "",
           *markdown(p3.groupby("condition")[METRICS[:1] + METRICS[2:] + ["cells_ratio"]].mean().round({"cells_ratio": 2}), METRICS[:1] + METRICS[2:]),
           "", *markdown(pair, list(pair.columns))]
     (OUT / "relatorio.md").write_text("\n".join(md) + "\n", encoding="utf-8")

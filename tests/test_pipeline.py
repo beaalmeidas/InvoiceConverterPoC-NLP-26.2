@@ -29,7 +29,7 @@ def fake_openrouter(content, finish_reason="stop"):
 
 
 def recording_client(calls):
-    """cliente falso que guarda os argumentos de cada chamada."""
+    """fake client that stores the arguments of each call."""
     response = fake_openrouter("<p>Nota</p>").chat.completions.create()
     return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(
         create=lambda **kwargs: calls.append(kwargs) or response)))
@@ -195,14 +195,14 @@ class HtmlTests(unittest.TestCase):
 
     def test_validation_rejects_changed_spans_values_and_truncation(self):
         html = pipeline.render_source("markdown", TABLE)
-        with self.assertRaisesRegex(ValueError, "mesclagens"):
+        with self.assertRaisesRegex(ValueError, "merges"):
             validate_response(html.replace('rowspan="2"', 'rowspan="3"'), TABLE, None)
         for altered in (html.replace("10,00", "20,00", 1).replace("20,00</td></tr>", "10,00</td></tr>"),
                         html.replace("10,00", "10.00"), html.replace("</body>", "<p>Inventado</p></body>"),
                         "<html><body><table><tr><td>Produto"):
             with self.subTest(altered=altered), self.assertRaises(ValueError):
                 validate_response(altered, TABLE, None)
-        with self.assertRaisesRegex(ValueError, "limite"):
+        with self.assertRaisesRegex(ValueError, "limit"):
             validate_response(html, TABLE, "length")
 
     def test_text_only_document(self):

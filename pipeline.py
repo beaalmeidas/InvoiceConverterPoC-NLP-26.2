@@ -1,4 +1,4 @@
-"""ocr de notas fiscais (paddleocr) → html direto ou via llm (openrouter), com métricas por etapa."""
+"""invoice ocr (paddleocr) → html directly or via llm (openrouter, ollama), with per-stage metrics."""
 from contextlib import contextmanager
 from datetime import datetime
 from functools import cache
@@ -18,23 +18,23 @@ OUTPUT_DIR = BASE_DIR / "output"
 RUNS_DIR = BASE_DIR / "runs"
 SUPPORTED_INPUTS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".pdf"}
 LLM_URLS = {"openrouter": "https://openrouter.ai/api/v1", "ollama": "http://localhost:11434/v1"}
-MODELS = {"openrouter": "qwen/qwen3.8-27b",  # pago; a versão :free saiu da openrouter
-          "ollama": "qwen2.5vl:7b"}  # roda na gpu do colab, sem custo
-VLM_MAX_SIDE = 1600  # o qwen2.5-vl gasta ~1 token por 28×28 px; a captura de 300 dpi estoura o contexto
+MODELS = {"openrouter": "qwen/qwen3.8-27b",  # paid; the :free version left openrouter
+          "ollama": "qwen2.5vl:7b"}  # runs on the colab gpu, free
+VLM_MAX_SIDE = 1600  # qwen2.5-vl spends ~1 token per 28×28 px; a 300 dpi capture overflows the context
 HTML_SUFFIX = {"compact": "_html.html", "markdown": "_from_md_html.html", "full_json": "_from_full_json_html.html"}
 
-# ---------- métricas ----------
+# ---------- metrics ----------
 
 records, _active = [], []
 
 
 @contextmanager
 def stage(name):
-    """mede tempo, cpu, pico de ram e tokens de llm de uma etapa."""
+    """measures time, cpu, peak ram and llm tokens of a stage."""
     record = {"stage": name, "peak_ram_mb": 0, "tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0}
     stop, process = threading.Event(), psutil.Process()
 
-    def sample():  # ru_maxrss marcou 7,9 GB onde a amostragem do rss viu 1,9 GB
+    def sample():  # ru_maxrss reported 7.9 GB where rss sampling saw 1.9 GB
         while True:
             record["peak_ram_mb"] = max(record["peak_ram_mb"], process.memory_info().rss / 2**20)
             if stop.wait(.05):
@@ -73,7 +73,7 @@ def summary():
 
 
 def report(label="pipeline"):
-    """imprime o resumo, salva em runs/metrics_<timestamp>.json e zera as medições."""
+    """prints the summary, saves it to runs/metrics_<timestamp>.json and clears the measurements."""
     if not records:
         return None
     table = summary()
@@ -84,14 +84,14 @@ def report(label="pipeline"):
                                 "summary": table.reset_index().to_dict("records")},
                                indent=2, default=lambda value: value.item()), encoding="utf-8")
     records.clear()
-    print(f"Métricas: {path}")
+    print(f"Metrics: {path}")
     return path
 
 # ---------- ocr ----------
 
 
 def extract_zip(archive_path, destination):
-    """extrai um zip de notas (ignora o __MACOSX do mac) e devolve a pasta extraída."""
+    """extracts a zip of invoices (skips the mac __MACOSX folder) and returns the extracted folder."""
     import zipfile
 
     destination.mkdir(parents=True, exist_ok=True)
@@ -101,7 +101,7 @@ def extract_zip(archive_path, destination):
 
 
 def result_directories(results_dir):
-    """separa intermediários e htmls finais em output/intermediarios e output/html."""
+    """splits intermediates and final htmls into output/intermediarios and output/html."""
     root = Path(results_dir).resolve()
     if not root.is_relative_to(OUTPUT_DIR):
         return root / "intermediarios", root / "html"
@@ -112,7 +112,7 @@ def result_directories(results_dir):
 
 
 def input_order(path, root):
-    """prioriza imagens com maior resolução."""
+    """prioritizes higher-resolution images."""
     first = path.relative_to(root).parts[0]
     return -int(first) if first in {"100", "150", "200", "300"} else 0, str(path.relative_to(root))
 
@@ -123,23 +123,23 @@ def select_inputs(root, dpi=None, limit=0):
     return files[:limit] if limit else files
 
 
-# textline_orientation=False: ligado, gira por engano linhas das notas em paisagem e o ocr lê lixo
-# (campos 66,7% → 88,9% na nota 02-1-cinza-300, mesmo tempo)
+# textline_orientation=False: when on, it wrongly rotates lines of landscape invoices and the ocr reads garbage
+# (fields 66.7% → 88.9% on invoice 02-1-cinza-300, same time)
 def load_engine(lang="pt", doc_orientation=True, textline_orientation=False, det_max_side=1280, cpu_threads=2):
     from paddleocr import PPStructureV3
 
     return PPStructureV3(
         lang=None if lang == "default" else lang, ocr_version=None if lang == "default" else "PP-OCRv5",
         use_doc_orientation_classify=doc_orientation, use_textline_orientation=textline_orientation,
-        use_doc_unwarping=False,  # capturas sintéticas já são planas
-        enable_mkldnn=False,  # onednn falha no paddle 3.3.1 (ConvertPirAttribute2RuntimeAttribute)
-        cpu_threads=cpu_threads,  # 2 foi o mais rápido no i7-1355U
+        use_doc_unwarping=False,  # synthetic captures are already flat
+        enable_mkldnn=False,  # onednn fails on paddle 3.3.1 (ConvertPirAttribute2RuntimeAttribute)
+        cpu_threads=cpu_threads,  # 2 was the fastest on the i7-1355U
         use_formula_recognition=False, use_chart_recognition=False, use_seal_recognition=False,
         use_table_recognition=True, text_det_limit_side_len=det_max_side, text_det_limit_type="max")
 
 
 def simplify_result(res):
-    """json compacto: só tipo, posição e conteúdo de cada bloco."""
+    """compact json: only type, position and content of each block."""
     data = json.loads(res.json) if isinstance(res.json, str) else res.json
     return [{"id": i, "type": block.get("block_label"), "bbox": block.get("block_bbox"),
              "content": block.get("block_content")}
@@ -147,7 +147,7 @@ def simplify_result(res):
 
 
 def prepare_image(source, destination, min_width=0):
-    """amplia até min_width; imagem já larga volta como está."""
+    """upscales to min_width; an image already wide enough is returned as is."""
     from PIL import Image
 
     with Image.open(source) as image:
@@ -160,7 +160,7 @@ def prepare_image(source, destination, min_width=0):
 
 
 def process_file(engine, input_path, input_root, output, min_width=1600, ruled_tables=True):
-    """roda o ocr em uma imagem ou pdf, salva as saídas e retorna (pasta, status)."""
+    """runs ocr on an image or pdf, saves the outputs and returns (folder, status)."""
     relative = input_path.relative_to(input_root)
     folder = result_directories(output)[0] / relative.parent / f"{input_path.stem}_{input_path.suffix[1:].lower()}"
     folder.mkdir(parents=True, exist_ok=True)
@@ -168,17 +168,17 @@ def process_file(engine, input_path, input_root, output, min_width=1600, ruled_t
     try:
         source = input_path
         if input_path.suffix.lower() != ".pdf":
-            with stage("ocr:preparar_imagem"):
+            with stage("ocr:prepare_image"):
                 source = prepare_image(input_path, folder / "_inputs" / f"{input_path.stem}.png", min_width)
         with stage("ocr:predict"):
             pages = list(engine.predict(str(source)))
         if not pages:
-            raise ValueError("OCR não retornou páginas")
+            raise ValueError("OCR returned no pages")
         for page, res in enumerate(pages, start=1):
             if ruled_tables:
-                with stage("ocr:reparar_tabelas"):
+                with stage("ocr:repair_tables"):
                     repair_tables(res, source)
-            with stage("ocr:salvar"):
+            with stage("ocr:save"):
                 res.save_to_json(save_path=str(folder))
                 res.save_to_markdown(save_path=str(folder))
                 res.save_to_html(save_path=str(folder))
@@ -186,16 +186,16 @@ def process_file(engine, input_path, input_root, output, min_width=1600, ruled_t
                     json.dumps(simplify_result(res), ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception as exc:
         status = "failed"
-        print(f"Falha em {input_path.name}: {exc}", flush=True)
+        print(f"Failed on {input_path.name}: {exc}", flush=True)
     (folder / "ocr_run.json").write_text(json.dumps({"status": status, "seconds": round(time.perf_counter() - started, 3)}),
                                          encoding="utf-8")
     return folder, status
 
-# ---------- tabelas pelas bordas visíveis ----------
+# ---------- tables from visible borders ----------
 
 
 def _boundaries(values, tolerance):
-    """agrupa coordenadas próximas e devolve a média de cada grupo."""
+    """groups nearby coordinates and returns the mean of each group."""
     groups = []
     for value in sorted(values):
         if groups and value - groups[-1][-1] <= tolerance:
@@ -227,7 +227,7 @@ def detect_cells(image):
 
 
 def ruled_table(image, ocr, bbox, cells=None):
-    """reconstrói a tabela pela grade visível; sem bordas confiáveis, retorna None."""
+    """rebuilds the table from the visible grid; without reliable borders, returns None."""
     cells = [cell for cell in (detect_cells(image) if cells is None else cells) if _overlap(cell, bbox) > .9]
     if len(cells) < 8:
         return None
@@ -253,7 +253,7 @@ def ruled_table(image, ocr, bbox, cells=None):
     grid = [(nearest(c[0], xs), nearest(c[1], ys), nearest(c[2], xs), nearest(c[3], ys)) for c in cells]
     if any(left >= right or top >= bottom for left, top, right, bottom in grid):
         return None
-    # faixas horizontais que nenhuma célula atravessa; faixas vizinhas com as mesmas colunas viram uma tabela
+    # horizontal bands that no cell crosses; neighboring bands with the same columns become one table
     cuts = [y for y in range(len(ys)) if not any(top < y < bottom for _, top, _, bottom in grid)]
     bands = []
     for lo, hi in zip(cuts, cuts[1:]):
@@ -294,7 +294,7 @@ def ruled_table(image, ocr, bbox, cells=None):
             html.append("</tr>")
         html.append("</tbody></table>")
         fragments.append((ys[band["start"]], "".join(html)))
-    fragments.extend((y, f"<p>{escape(text)}</p>") for y, _, text in loose)  # textos sem posição segura
+    fragments.extend((y, f"<p>{escape(text)}</p>") for y, _, text in loose)  # texts without a reliable position
     return {"html": "\n".join(fragment for _, fragment in sorted(fragments, key=lambda part: part[0])),
             "cells": cells, "matched_lines": matched, "loose_line_ids": [i for _, i, _ in loose]}
 
@@ -564,7 +564,7 @@ def prepare_content(kind, path):
 
 
 def clean_fragment(content, keep_classes=False):
-    """remove estilos e documentos aninhados; preserva células e mesclagens."""
+    """removes styles and nested documents; keeps cells and merges."""
     soup = BeautifulSoup(content, "html.parser")
     for tag in soup.find_all(["head", "style", "script", "meta", "link"]):
         tag.decompose()
@@ -579,7 +579,7 @@ def clean_fragment(content, keep_classes=False):
 
 
 def render_source(kind, content):
-    """html direto do ocr, sem llm."""
+    """html straight from the ocr, no llm."""
     fragments = [content] if kind == "markdown" else [
         str(block.get("content") or "") if block.get("type") == "table"
         else f"<p>{escape(str(block.get('content') or ''))}</p>" for block in json.loads(content)]
@@ -590,7 +590,7 @@ def render_source(kind, content):
 
 
 def add_presentation(html):
-    """aplica o estilo sem alterar o conteúdo das células."""
+    """applies the style without changing cell content."""
     soup = html if not isinstance(html, str) else clean_fragment(
         re.sub(r"^```(?:html)?\s*|\s*```$", "", html.strip(), flags=re.IGNORECASE), keep_classes=True)
     for cell in soup.find_all(["td", "th"]):
@@ -610,22 +610,22 @@ def _client(engine="openrouter"):
     from openai import OpenAI
 
     load_dotenv(BASE_DIR / ".env")
-    key = os.environ["OPENROUTER_API_KEY"] if engine == "openrouter" else "ollama"  # o ollama ignora a chave
+    key = os.environ["OPENROUTER_API_KEY"] if engine == "openrouter" else "ollama"  # ollama ignores the key
     return OpenAI(base_url=LLM_URLS[engine], api_key=key, max_retries=5)
 
 
 def _ask(engine, model, content, num_predict=16384, reasoning=False):
-    """uma chamada de chat; content é texto ou lista de partes (texto e imagem)."""
+    """one chat call; content is text or a list of parts (text and image)."""
     response = _client(engine).chat.completions.create(
         model=model, temperature=0, max_tokens=num_predict, messages=[{"role": "user", "content": content}],
-        # raciocínio gasta 5–16 mil tokens e trunca; o ollama não conhece o campo
+        # reasoning spends 5–16k tokens and truncates; ollama does not know the field
         extra_body={"reasoning": {"enabled": reasoning}} if engine == "openrouter" else None)
     record_llm(response.usage.prompt_tokens, response.usage.completion_tokens, getattr(response.usage, "cost", 0))
     choice = response.choices[0]
     if choice.finish_reason == "length":
-        raise ValueError("HTML truncado: aumente num-predict.")
+        raise ValueError("HTML truncated: increase num-predict.")
     if not choice.message.content:
-        raise ValueError("O modelo não retornou conteúdo.")
+        raise ValueError("The model returned no content.")
     return choice.message.content
 
 
@@ -644,13 +644,13 @@ def ask_llm(kind, content, model=None, num_predict=16384, reasoning=False, engin
 
 
 def ask_vlm(image_path, model=None, num_predict=16384, engine="openrouter", markers=True):
-    """html direto da imagem, sem ocr; a imagem vai reduzida a VLM_MAX_SIDE e em png."""
+    """html straight from the image, no ocr; the image is downscaled to VLM_MAX_SIDE and sent as png."""
     import base64
     import cv2
 
     image = cv2.imread(str(image_path))
     if image is None:
-        raise ValueError(f"Imagem ilegível (pdf não é aceito pelo vlm): {image_path}")
+        raise ValueError(f"Unreadable image (the vlm does not accept pdf): {image_path}")
     if (scale := VLM_MAX_SIDE / max(image.shape[:2])) < 1:
         image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
     data = base64.b64encode(cv2.imencode(".png", image)[1]).decode()
@@ -660,10 +660,10 @@ def ask_vlm(image_path, model=None, num_predict=16384, engine="openrouter", mark
 
 
 def write_html(layout_path, kind, results_dir, engine="direct", model=None, num_predict=16384, reasoning=False, markers=True):
-    """gera um html final (engine direct, openrouter ou ollama); o log fica nos intermediários."""
+    """writes a final html (engine direct, openrouter or ollama); the log goes in the intermediates."""
     source = source_path(layout_path, kind)
     if not source.is_file():
-        print(f"Entrada {kind} ausente: {source}")
+        print(f"Missing {kind} input: {source}")
         return None
     destination = output_path(layout_path, kind, results_dir)
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -686,7 +686,7 @@ def write_html(layout_path, kind, results_dir, engine="direct", model=None, num_
             print(f"HTML ({kind}): {destination}", flush=True)
         except Exception as exc:
             log["error"] = str(exc)
-            print(f"Falha no fluxo {kind} para {source.name}: {exc}", flush=True)
+            print(f"{kind} flow failed for {source.name}: {exc}", flush=True)
     log["duration_seconds"] = round(record["seconds"], 3)
     layout_path.with_name(destination.name).with_suffix(".generation.json").write_text(
         json.dumps(log, ensure_ascii=False, indent=2), encoding="utf-8")
