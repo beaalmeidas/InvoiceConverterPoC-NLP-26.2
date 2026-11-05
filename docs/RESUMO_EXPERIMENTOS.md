@@ -4,7 +4,7 @@
 > compacto → Qwen2.5-VL:7b → HTML. Os scripts de experimentação, o gerador de
 > DANFEs, o módulo avulso `invoice_formats.py`, o notebook Gemma e as cópias
 > da pasta `historico/` foram retirados. O notebook
-> `notebooks/NLP_26_2_openrouter_test.ipynb` foi restaurado e permanece disponível. Todos os outputs permanecem preservados e são versionáveis.
+> `notebooks/historico/v1_openrouter_test.ipynb` (antes `NLP_26_2_openrouter_test.ipynb`) foi restaurado e permanece disponível. Todos os outputs permanecem preservados e são versionáveis.
 > O texto abaixo registra o levantamento anterior; referências a esses códigos
 > e a diretórios ignorados descrevem aquele estado, não a estrutura atual.
 > O resumo em TXT foi consolidado neste documento. O erro registrado no HTML
@@ -48,7 +48,7 @@ O arquivo `output/img_1.md` já contém uma tabela HTML. Portanto, o experimento
 | Extrações e validação locais adicionais | `output/extracao/off/pagina_001/` e `output/validacao/off/pagina_001/` | Há artefatos de extração, inclusive da segunda imagem; a existência da pasta `validacao` não comprova acurácia dos campos |
 | Qwen2.5:7b, Markdown → HTML | Notebook histórico e `output/qwen-html/img_1_rep.html` | Produziu tabela HTML; o arquivo salvo ainda contém delimitadores de código Markdown |
 | Qwen2.5:7b, JSON de blocos → HTML | Notebook histórico e `output/qwen-html/nota_fiscal_json.html` | Produziu documento HTML com tabela e CSS; há alterações de grafia em relação ao OCR, portanto não é cópia literal garantida |
-| Prompt para preservar DANFE e impressão | `notebooks/historico/og_NLP_26_2_openrouter_test.ipynb` | Foi implementado reforço para preservar células, mesclagens e CSS A4; sem medição isolada de ganho |
+| Prompt para preservar DANFE e impressão | `notebooks/historico/v1_openrouter_test.ipynb` | Foi implementado reforço para preservar células, mesclagens e CSS A4; sem medição isolada de ganho |
 | Gemma, arquivos identificados como JSON → HTML/Markdown | `output/gemma-html/img_1_json.html` e `output/gemma-md/img_1_json.md` | Responderam com explicações sobre dados numéricos/sensores, em vez de reconstruir a nota; o arquivo `.html` não contém documento HTML |
 | Gemma, arquivos identificados como JSON compacto → HTML/Markdown | `output/gemma-html/img_1_compact.html` e `output/gemma-md/img_1_compact.md` | Passaram a apresentar dados da nota, mas o HTML usa parágrafos e “Table 1”, insere placeholder e termina incompleto; o Markdown também termina no meio de um campo |
 | Outros HTMLs Gemma preservados | `output/gemma-html/img_1_rep.html` e `img_2_rep.html` | O primeiro termina no meio de uma célula; o segundo contém tabela e delimitadores Markdown. Não há manifesto que vincule cada arquivo aos parâmetros exatos da geração |

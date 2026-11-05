@@ -86,7 +86,7 @@ Foi feito (Larissa):
 
 Foi feito por Guilherme:
 
-- Montou a própria versão do notebook (`guilherme_pipeline_ipynb.ipynb`) com o modelo gratuito `nvidia/nemotron-3-ultra-550b-a55b:free` no OpenRouter.
+- Montou a própria versão do notebook (hoje `notebooks/historico/v2_openrouter_datafields.ipynb`) com o modelo gratuito `nvidia/nemotron-3-ultra-550b-a55b:free` no OpenRouter.
 - Colocou um contrato de campos (`contrato_campos.csv`) no prompt: cada valor da nota sai marcado no HTML com `data-field`, e o notebook confere quais campos do contrato ficaram sem marcação.
 - Comparou as mesmas 19 notas nos três caminhos (`relatorio-guilherme.md`): OCR direto 79,0%, OCR + LLM 88,1% e VLM 96,1% (o VLM só respondeu 15 das 19). Ele usa outro conjunto de campos, então os percentuais não são comparáveis com os meus, mas a conclusão é a mesma: o VLM acerta mais, mas falha em algumas notas.
 - Tempo médio por nota: OCR direto 71 s, OCR + LLM 184 s e VLM 124 s.
@@ -95,10 +95,10 @@ Foi feito por Guilherme:
 
 Foi feito (Larissa):
 
-- Guilherme alterou a pipeline para gerar os marcadores que Cauã e Miguel precisavam e enviou o notebook (`pipeline_openrouter_gui.ipynb`). Comparei com o notebook atual: a única diferença de código eram os marcadores, e passei para o `pipeline.py`, o `main.py` e o `notebooks/pipeline_openrouter.ipynb`.
+- Guilherme alterou a pipeline para gerar os marcadores que Cauã e Miguel precisavam e enviou o notebook (hoje `notebooks/historico/v4_pipeline_marcadores.ipynb`). Comparei com o notebook atual: a única diferença de código eram os marcadores, e passei para o `pipeline.py`, o `main.py` e o `notebooks/pipeline_openrouter.ipynb`.
 - O prompt ganhou o `MARKERS_PROMPT`: além do `data-field` de cada campo do contrato, o HTML sai com `data-section` (caixa da nota), `data-item` (número do produto) e `data-index` (parcela ou forma de pagamento). Pode ser desligado com `markers=False`.
 - O `clean_fragment` passou a manter esses atributos; antes ele os apagava e as marcações nunca chegariam ao HTML final.
 - O `write_html` grava `data_field_raw` e `data_field_final` no `.generation.json`, para ver se alguma marcação se perdeu ao aplicar o estilo.
 - O `num_predict` padrão subiu para 16384 no `pipeline.py` e no `main.py` (o notebook já usava), porque o prompt novo deixa o HTML maior.
-- Os notebooks soltos foram para `notebooks/versoes/` (o do Guilherme, o `_gui` e o `_novo`); o oficial é o `pipeline_openrouter.ipynb`.
+- Os notebooks antigos foram para `notebooks/historico/` como `v1` a `v4`; o oficial é o `pipeline_openrouter.ipynb`.
 - Não rodei a pipeline nem os testes depois da mudança (o ambiente local não tem o `cv2`). Falta um lote pequeno no Colab para confirmar que os `data_field_*` aparecem.
